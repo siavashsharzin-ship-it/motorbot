@@ -9,12 +9,11 @@ from telegram.ext import (
     filters
 )
 
-# ---------------- تنظیمات واقعی ----------------
-TOKEN = "8868906040:AAHbcnGXFW5diAhe8DnR6-6JKBa-NRlWYpE"   # توکن واقعی تو
- OWNER_ID = 8474856910 # بعد از اجرای /id اینجا ایدی عددی خودت را می‌گذاری
-
-CARD_NUMBER = "6037998216767839"   # شماره کارت واقعی تو
-SUPPORT_PHONE = "+989910065071"    # شماره موبایل تو (در ربات نمایش داده نمی‌شود)
+# ---------------- تنظیمات ----------------
+TOKEN = "8868906040:AAHbcnGXFW5diAhe8DnR6-6JKBa-NRlWYpE"
+OWNER_ID = 8474856910
+SUPPORT_PHONE = "+989910065071"
+CARD_NUMBER = "6037998216767839"
 
 logging.basicConfig(level=logging.INFO)
 
