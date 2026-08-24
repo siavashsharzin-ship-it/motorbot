@@ -14,7 +14,7 @@ TOKEN = "8868906040:AAHFEcVX4u6Nh-K2AJG_9KDIix3PENqA4sc"
 OWNER_ID = 8474856910
 SUPPORT_PHONE = "+989910065071"
 CARD_NUMBER = "6037998216767839"
-CHANNEL_USERNAME = "persian_motor_channel"  # یوزرنیم کانال کانال خودت
+CHANNEL_USERNAME = "persian_motor"  # یوزرنیم کانال کانال خودت
 
 logging.basicConfig(level=logging.INFO)
 
