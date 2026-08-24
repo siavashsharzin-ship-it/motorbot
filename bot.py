@@ -1,4 +1,3 @@
-`python
 import logging
 import re
 from telegram import (
@@ -9,23 +8,23 @@ from telegram.ext import (
     MessageHandler, ContextTypes, filters
 )
 
----------------- تنظیمات ---------------- #
+# ---------------- تنظیمات ---------------- #
 TOKEN = "8868906040:AAHFEcVX4u6Nh-K2AJG_9KDIix3PENqA4sc"
 OWNER_ID = 8474856910
 SUPPORT_PHONE = "+989910065071"
 CARD_NUMBER = "6037998216767839"
-CHANNELUSERNAME = "persianmotor"   # یوزرنیم کانال
+CHANNEL_USERNAME = "persian_motor"   # یوزرنیم کانال
 
 logging.basicConfig(level=logging.INFO)
 
----------------- دیتابیس ---------------- #
+# ---------------- دیتابیس ---------------- #
 ads = {}            # آگهی‌های تأیید شده
 pending_ads = {}    # آگهی‌های در انتظار تأیید
 user_state = {}
 temp_data = {}
-nextadid = 1
+next_ad_id = 1
 
----------------- منوها ---------------- #
+# ---------------- منوها ---------------- #
 def user_menu():
     kb = [
         ["ثبت آگهی موتور", "لیست آگهی‌ها"],
@@ -43,10 +42,10 @@ def admin_menu():
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
----------------- پیشنهاد عضویت کانال ---------------- #
-async def suggestjoin(update: Update, context: ContextTypes.DEFAULTTYPE):
+# ---------------- پیشنهاد عضویت کانال ---------------- #
+async def suggest_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        member = await context.bot.getchatmember(f"@{CHANNELUSERNAME}", update.effectiveuser.id)
+        member = await context.bot.get_chat_member(f"@{CHANNEL_USERNAME}", update.effective_user.id)
         if member.status not in ["member", "administrator", "creator"]:
             await update.message.reply_text(
                 f"برای دیدن همه آگهی‌ها و عکس‌ها، بهتره عضو کانال بشی:\nhttps://t.me/{CHANNEL_USERNAME}"
@@ -54,7 +53,7 @@ async def suggestjoin(update: Update, context: ContextTypes.DEFAULTTYPE):
     except:
         pass
 
----------------- قوانین ---------------- #
+# ---------------- قوانین ---------------- #
 def rules():
     return (
         "📜 قوانین ربات موتور:\n\n"
@@ -65,17 +64,17 @@ def rules():
         "✅ اعضا می‌توانند دوستانشان را به کانال و ربات اضافه کنند.\n"
     )
 
----------------- شروع ---------------- #
+# ---------------- شروع ---------------- #
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     await suggest_join(update, context)
 
     if uid == OWNER_ID:
-        await update.message.replytext("سلام مدیر عزیز 👑", replymarkup=admin_menu())
+        await update.message.reply_text("سلام مدیر عزیز 👑", reply_markup=admin_menu())
     else:
-        await update.message.replytext(rules(), replymarkup=user_menu())
+        await update.message.reply_text(rules(), reply_markup=user_menu())
 
----------------- تماس با پشتیبانی ---------------- #
+# ---------------- تماس با پشتیبانی ---------------- #
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         f"📞 پشتیبانی:\n"
@@ -83,24 +82,24 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"شماره کارت: {CARD_NUMBER}\n"
         f"برای هماهنگی، تماس یا واتساپ."
     )
-    if update.effectiveuser.id == OWNERID:
-        await update.message.replytext(text, replymarkup=admin_menu())
+    if update.effective_user.id == OWNER_ID:
+        await update.message.reply_text(text, reply_markup=admin_menu())
     else:
-        await update.message.replytext(text, replymarkup=user_menu())
+        await update.message.reply_text(text, reply_markup=user_menu())
 
----------------- دستور /id ---------------- #
-async def getid(update: Update, context: ContextTypes.DEFAULTTYPE):
-    userid = update.effectiveuser.id
-    await update.message.replytext(f"ایدی شما: {userid}")
+# ---------------- دستور /id ---------------- #
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text(f"ایدی شما: {user_id}")
 
----------------- ثبت آگهی ---------------- #
-async def newad(update: Update, context: ContextTypes.DEFAULTTYPE):
+# ---------------- ثبت آگهی ---------------- #
+async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user_state[uid] = "province"
     temp_data[uid] = {"photos": []}
     await update.message.reply_text("استان:")
 
----------------- دستیار هوشمند کارشناسی ---------------- #
+# ---------------- دستیار هوشمند کارشناسی ---------------- #
 async def assistant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user_state[uid] = "assistant"
@@ -157,7 +156,7 @@ def extract_info(text: str):
         info["document"] = "دارای سند"
 
     # بیمه
-    m_ins = re.search(r"بیمه\s([\d]+)\sماه", text)
+    m_ins = re.search(r"بیمه\s*([\d]+)\s*ماه", text)
     if m_ins:
         info["insurance"] = int(m_ins.group(1))
 
@@ -204,15 +203,15 @@ def expert_analysis(info: dict) -> str:
     comment_price = "اطلاعات قیمت کافی نیست."
     if price is not None:
         if "هوندا" in model or "125" in model:
-            basemin, basemax = 45000000, 150000000
+            base_min, base_max = 45000000, 150000000
         elif "آپاچی" in model or "apache" in model or "180" in model:
-            basemin, basemax = 90000000, 230000000
+            base_min, base_max = 90000000, 230000000
         elif "پالس" in model or "bajaj" in model:
-            basemin, basemax = 70000000, 200000000
+            base_min, base_max = 70000000, 200000000
         else:
-            basemin, basemax = None, None
+            base_min, base_max = None, None
 
-        if basemin and basemax:
+        if base_min and base_max:
             # تعدیل بر اساس سال و کارکرد
             if year and year >= 1400:
                 base_min *= 1.1
@@ -258,7 +257,7 @@ def expert_analysis(info: dict) -> str:
 
     return "\n".join(lines)
 
-async def handleassistant(update: Update, context: ContextTypes.DEFAULTTYPE):
+async def handle_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text
 
@@ -266,21 +265,21 @@ async def handleassistant(update: Update, context: ContextTypes.DEFAULTTYPE):
     result = expert_analysis(info)
 
     if uid == OWNER_ID:
-        await update.message.replytext(result, replymarkup=admin_menu())
+        await update.message.reply_text(result, reply_markup=admin_menu())
     else:
-        await update.message.replytext(result, replymarkup=user_menu())
+        await update.message.reply_text(result, reply_markup=user_menu())
 
     del user_state[uid]
 
----------------- هندل پیام‌ها ---------------- #
-async def handlemessage(update: Update, context: ContextTypes.DEFAULTTYPE):
+# ---------------- هندل پیام‌ها ---------------- #
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     msg = update.message
 
     if msg.photo:
-        if uid in userstate and userstate[uid] == "photos":
-            photoid = msg.photo[-1].fileid
-            tempdata[uid]["photos"].append(photoid)
+        if uid in user_state and user_state[uid] == "photos":
+            photo_id = msg.photo[-1].file_id
+            temp_data[uid]["photos"].append(photo_id)
             await msg.reply_text("✅ عکس اضافه شد. اگر عکس دیگری داری، بفرست؛ اگر تمام شد، بنویس: تمام")
             return
         else:
@@ -330,26 +329,26 @@ async def handlemessage(update: Update, context: ContextTypes.DEFAULTTYPE):
 
     if step == "photos":
         if text.strip() == "تمام":
-            global nextadid
-            pendingads[nextadid] = tempdata[uid]
+            global next_ad_id
+            pending_ads[next_ad_id] = temp_data[uid]
 
             await msg.reply_text(
-                f"آگهی #{nextadid} ثبت شد و منتظر تأیید مدیر است.",
-                replymarkup=usermenu()
+                f"آگهی #{next_ad_id} ثبت شد و منتظر تأیید مدیر است.",
+                reply_markup=user_menu()
             )
 
             ad = temp_data[uid]
             admin_msg = (
                 f"🔔 آگهی جدید:\n\n"
-                f"#{nextadid}\n"
+                f"#{next_ad_id}\n"
                 f"{ad['province']} - {ad['city']}\n"
                 f"{ad['model']} - {ad['price']}\n"
                 f"تماس: {ad['phone']}\n"
                 f"تعداد عکس: {len(ad['photos'])}"
             )
-            await context.bot.sendmessage(OWNERID, admin_msg)
+            await context.bot.send_message(OWNER_ID, admin_msg)
 
-            nextadid += 1
+            next_ad_id += 1
             del user_state[uid]
             del temp_data[uid]
             return
@@ -359,14 +358,14 @@ async def handlemessage(update: Update, context: ContextTypes.DEFAULTTYPE):
 
     if step == "approve":
         if uid != OWNER_ID:
-            await msg.replytext("فقط مدیر.", replymarkup=user_menu())
+            await msg.reply_text("فقط مدیر.", reply_markup=user_menu())
             del user_state[uid]
             return
 
         try:
             ad_id = int(text)
-            if adid in pendingads:
-                ads[adid] = pendingads[ad_id]
+            if ad_id in pending_ads:
+                ads[ad_id] = pending_ads[ad_id]
                 ad = ads[ad_id]
 
                 caption = (
@@ -379,23 +378,23 @@ async def handlemessage(update: Update, context: ContextTypes.DEFAULTTYPE):
                 if ad["photos"]:
                     media = [InputMediaPhoto(photo_id, caption=caption if i == 0 else "") 
                              for i, photo_id in enumerate(ad["photos"])]
-                    await context.bot.sendmediagroup(chatid=f"@{CHANNELUSERNAME}", media=media)
+                    await context.bot.send_media_group(chat_id=f"@{CHANNEL_USERNAME}", media=media)
                 else:
-                    await context.bot.sendmessage(chatid=f"@{CHANNEL_USERNAME}", text=caption)
+                    await context.bot.send_message(chat_id=f"@{CHANNEL_USERNAME}", text=caption)
 
-                await msg.replytext(f"آگهی #{adid} تأیید و در کانال منتشر شد ✅", replymarkup=adminmenu())
-                del pendingads[adid]
+                await msg.reply_text(f"آگهی #{ad_id} تأیید و در کانال منتشر شد ✅", reply_markup=admin_menu())
+                del pending_ads[ad_id]
             else:
-                await msg.replytext("آگهی در انتظار تأیید نیست.", replymarkup=admin_menu())
+                await msg.reply_text("آگهی در انتظار تأیید نیست.", reply_markup=admin_menu())
         except:
-            await msg.replytext("شماره آگهی نامعتبر است.", replymarkup=admin_menu())
+            await msg.reply_text("شماره آگهی نامعتبر است.", reply_markup=admin_menu())
 
         del user_state[uid]
         return
 
     if step == "delete":
         if uid != OWNER_ID:
-            await msg.replytext("فقط مدیر.", replymarkup=user_menu())
+            await msg.reply_text("فقط مدیر.", reply_markup=user_menu())
             del user_state[uid]
             return
 
@@ -403,11 +402,11 @@ async def handlemessage(update: Update, context: ContextTypes.DEFAULTTYPE):
             ad_id = int(text)
             if ad_id in ads:
                 del ads[ad_id]
-                await msg.replytext(f"آگهی #{adid} حذف شد.", replymarkup=adminmenu())
+                await msg.reply_text(f"آگهی #{ad_id} حذف شد.", reply_markup=admin_menu())
             else:
-                await msg.replytext("آگهی پیدا نشد.", replymarkup=admin_menu())
+                await msg.reply_text("آگهی پیدا نشد.", reply_markup=admin_menu())
         except:
-            await msg.replytext("شماره آگهی نامعتبر است.", replymarkup=admin_menu())
+            await msg.reply_text("شماره آگهی نامعتبر است.", reply_markup=admin_menu())
 
         del user_state[uid]
         return
@@ -416,12 +415,12 @@ async def handlemessage(update: Update, context: ContextTypes.DEFAULTTYPE):
         await handle_search(update, context)
         return
 
----------------- لیست آگهی‌های تأیید شده ---------------- #
-async def listads(update: Update, context: ContextTypes.DEFAULTTYPE):
+# ---------------- لیست آگهی‌های تأیید شده ---------------- #
+async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ads:
         await update.message.reply_text(
             "هیچ آگهی تأیید شده‌ای نیست.",
-            replymarkup=adminmenu() if update.effectiveuser.id == OWNERID else user_menu()
+            reply_markup=admin_menu() if update.effective_user.id == OWNER_ID else user_menu()
         )
         return
 
@@ -429,54 +428,54 @@ async def listads(update: Update, context: ContextTypes.DEFAULTTYPE):
     for ad_id, ad in ads.items():
         text += f"#{ad_id}\n{ad['province']} - {ad['city']}\n{ad['model']} - {ad['price']}\nتماس: {ad['phone']}\n\n"
 
-    if update.effectiveuser.id == OWNERID:
-        await update.message.replytext(text, replymarkup=admin_menu())
+    if update.effective_user.id == OWNER_ID:
+        await update.message.reply_text(text, reply_markup=admin_menu())
     else:
-        await update.message.replytext(text, replymarkup=user_menu())
+        await update.message.reply_text(text, reply_markup=user_menu())
 
----------------- آگهی‌های در انتظار تأیید ---------------- #
-async def pendinglist(update: Update, context: ContextTypes.DEFAULTTYPE):
-    if update.effectiveuser.id != OWNERID:
-        await update.message.replytext("فقط مدیر.", replymarkup=user_menu())
+# ---------------- آگهی‌های در انتظار تأیید ---------------- #
+async def pending_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("فقط مدیر.", reply_markup=user_menu())
         return
 
     if not pending_ads:
-        await update.message.replytext("هیچ آگهی در انتظار نیست.", replymarkup=admin_menu())
+        await update.message.reply_text("هیچ آگهی در انتظار نیست.", reply_markup=admin_menu())
         return
 
     text = ""
-    for adid, ad in pendingads.items():
+    for ad_id, ad in pending_ads.items():
         text += f"#{ad_id}\n{ad['province']} - {ad['city']}\n{ad['model']} - {ad['price']}\nتماس: {ad['phone']}\nتعداد عکس: {len(ad['photos'])}\n\n"
 
-    await update.message.replytext(text, replymarkup=admin_menu())
+    await update.message.reply_text(text, reply_markup=admin_menu())
 
----------------- تأیید آگهی ---------------- #
-async def startapprove(update: Update, context: ContextTypes.DEFAULTTYPE):
-    if update.effectiveuser.id != OWNERID:
-        await update.message.replytext("فقط مدیر.", replymarkup=user_menu())
+# ---------------- تأیید آگهی ---------------- #
+async def start_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("فقط مدیر.", reply_markup=user_menu())
         return
 
     uid = update.effective_user.id
     user_state[uid] = "approve"
-    await update.message.replytext("شماره آگهی برای تأیید:", replymarkup=admin_menu())
+    await update.message.reply_text("شماره آگهی برای تأیید:", reply_markup=admin_menu())
 
----------------- حذف آگهی ---------------- #
-async def startdelete(update: Update, context: ContextTypes.DEFAULTTYPE):
-    if update.effectiveuser.id != OWNERID:
-        await update.message.replytext("فقط مدیر.", replymarkup=user_menu())
+# ---------------- حذف آگهی ---------------- #
+async def start_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("فقط مدیر.", reply_markup=user_menu())
         return
 
     uid = update.effective_user.id
     user_state[uid] = "delete"
-    await update.message.replytext("شماره آگهی برای حذف:", replymarkup=admin_menu())
+    await update.message.reply_text("شماره آگهی برای حذف:", reply_markup=admin_menu())
 
----------------- جستجو ---------------- #
+# ---------------- جستجو ---------------- #
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user_state[uid] = "search"
     await update.message.reply_text("عبارت مورد نظر (استان، شهر، مدل یا قیمت):")
 
-async def handlesearch(update: Update, context: ContextTypes.DEFAULTTYPE):
+async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text
 
@@ -493,7 +492,7 @@ async def handlesearch(update: Update, context: ContextTypes.DEFAULTTYPE):
     if not results:
         await update.message.reply_text(
             "چیزی پیدا نشد.",
-            replymarkup=adminmenu() if uid == OWNERID else usermenu()
+            reply_markup=admin_menu() if uid == OWNER_ID else user_menu()
         )
     else:
         msg = ""
@@ -506,31 +505,30 @@ async def handlesearch(update: Update, context: ContextTypes.DEFAULTTYPE):
             )
         await update.message.reply_text(
             msg,
-            replymarkup=adminmenu() if uid == OWNERID else usermenu()
+            reply_markup=admin_menu() if uid == OWNER_ID else user_menu()
         )
 
     del user_state[uid]
 
----------------- اجرای ربات ---------------- #
+# ---------------- اجرای ربات ---------------- #
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.addhandler(CommandHandler("id", getid))
+    app.add_handler(CommandHandler("id", get_id))
 
-    app.addhandler(MessageHandler(filters.Regex("^ثبت آگهی موتور$"), newad))
-    app.addhandler(MessageHandler(filters.Regex("^لیست آگهی‌ها$"), listads))
-    app.addhandler(MessageHandler(filters.Regex("^آگهی‌های در انتظار تأیید$"), pendinglist))
+    app.add_handler(MessageHandler(filters.Regex("^ثبت آگهی موتور$"), new_ad))
+    app.add_handler(MessageHandler(filters.Regex("^لیست آگهی‌ها$"), list_ads))
+    app.add_handler(MessageHandler(filters.Regex("^آگهی‌های در انتظار تأیید$"), pending_list))
     app.add_handler(MessageHandler(filters.Regex("^جستجو$"), search))
     app.add_handler(MessageHandler(filters.Regex("^تماس با پشتیبانی$"), support))
     app.add_handler(MessageHandler(filters.Regex("^دستیار هوشمند$"), assistant))
-    app.addhandler(MessageHandler(filters.Regex("^تأیید آگهی$"), startapprove))
-    app.addhandler(MessageHandler(filters.Regex("^حذف آگهی$"), startdelete))
+    app.add_handler(MessageHandler(filters.Regex("^تأیید آگهی$"), start_approve))
+    app.add_handler(MessageHandler(filters.Regex("^حذف آگهی$"), start_delete))
 
-    app.addhandler(MessageHandler(filters.TEXT | filters.PHOTO, handlemessage))
+    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_message))
 
     app.run_polling()
 
-if name == "main":
+if __name__ == "__main__":
     main()
-`
