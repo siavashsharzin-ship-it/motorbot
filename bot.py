@@ -14,7 +14,7 @@ TOKEN = "8868906040:AAHFEcVX4u6Nh-K2AJG_9KDIix3PENqA4sc"
 OWNER_ID = 8474856910
 SUPPORT_PHONE = "+989910065071"
 CARD_NUMBER = "6037998216767839"
-CHANNEL_USERNAME = "persian_motor_channel"  # یوزرنیم کانال خودت را اینجا بگذار
+CHANNEL_USERNAME = "persian_motor_channel"  # یوزرنیم کانال کانال خودت
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,21 +28,18 @@ next_ad_id = 1
 # ---------------- منوها ---------------- #
 def user_menu():
     kb = [
-        ["ثبت آگهی موتور"],
-        ["لیست آگهی‌ها"],
-        ["جستجو"],
-        ["قوانین ربات"],
-        ["تماس با پشتیبانی"]
+        ["ثبت آگهی موتور", "لیست آگهی‌ها"],
+        ["جستجو", "تماس با پشتیبانی"],
+        ["دستیار هوشمند"]
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
 def admin_menu():
     kb = [
-        ["لیست آگهی‌ها"],
-        ["آگهی‌های در انتظار تأیید"],
+        ["ثبت آگهی موتور", "لیست آگهی‌ها"],
+        ["آگهی‌های در انتظار تأیید", "جستجو"],
         ["حذف آگهی", "تأیید آگهی"],
-        ["جستجو"],
-        ["تماس با پشتیبانی"]
+        ["تماس با پشتیبانی", "دستیار هوشمند"]
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -54,9 +51,9 @@ async def is_member(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     except Exception:
         return False
 
-# ---------------- قوانین ---------------- #
-async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
+# ---------------- قوانین (فقط برای مشتری) ---------------- #
+async def rules_text() -> str:
+    return (
         "📜 قوانین ربات موتور:\n\n"
         "✅ هزینه ثبت هر آگهی موتور: ۷,۰۰۰,۰۰۰ ریال\n"
         "✅ آگهی تا زمان فروش موتور فعال می‌ماند.\n"
@@ -64,17 +61,20 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "❌ عکس شخصی، سلفی، شماره موبایل روی عکس و هر چیز غیرمرتبط ممنوع است.\n"
         "❌ در صورت تخلف، آگهی بدون بازگشت وجه حذف می‌شود.\n"
     )
-    await update.message.reply_text(text, reply_markup=user_menu())
 
 # ---------------- شروع ---------------- #
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "سلام 👋\n"
         "به ربات خرید و فروش موتور خوش آمدید.\n\n"
-        "قبل از استفاده، قوانین را حتماً بخوانید.\n"
         "هزینه ثبت هر آگهی: ۷,۰۰۰,۰۰۰ ریال.\n"
+        "آگهی تا زمان فروش موتور فعال می‌ماند.\n\n"
+        "با منوی زیر کار را شروع کنید."
     )
-    await update.message.reply_text(text, reply_markup=user_menu())
+    if update.effective_user.id == OWNER_ID:
+        await update.message.reply_text(text, reply_markup=admin_menu())
+    else:
+        await update.message.reply_text(await rules_text(), reply_markup=user_menu())
 
 # ---------------- تماس با پشتیبانی ---------------- #
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,7 +84,10 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"شماره کارت: {CARD_NUMBER}\n"
         f"برای هماهنگی و پرداخت، با این شماره در واتساپ یا تماس مستقیم در ارتباط باشید."
     )
-    await update.message.reply_text(text, reply_markup=user_menu())
+    if update.effective_user.id == OWNER_ID:
+        await update.message.reply_text(text, reply_markup=admin_menu())
+    else:
+        await update.message.reply_text(text, reply_markup=user_menu())
 
 # ---------------- دستور /id ---------------- #
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,6 +131,16 @@ def price_hint(model: str, price_text: str) -> str:
             return "💬 قیمت آپاچی قابل قبول است."
     return "💬 قیمت وارد شده بررسی شد؛ در صورت نیاز با پشتیبانی مشورت کنید."
 
+# ---------------- دستیار هوشمند (ساده و متنی) ---------------- #
+async def assistant(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    user_state[uid] = "assistant"
+    await update.message.reply_text(
+        "🤖 دستیار هوشمند فعال شد.\n"
+        "مدل موتور و قیمت تقریبی را بنویس تا نظر بدهم.\n"
+        "مثال: هوندا 125، قیمت 120000000"
+    )
+
 # ---------------- هندل پیام‌ها ---------------- #
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -145,6 +158,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     step = user_state[uid]
+
+    # دستیار هوشمند
+    if step == "assistant":
+        parts = text.split("،")
+        if len(parts) < 2:
+            await update.message.reply_text(
+                "لطفاً به این شکل بنویس:\nمدل موتور، قیمت\nمثال: هوندا 125، 120000000"
+            )
+            return
+        model = parts[0]
+        price_text = parts[1]
+        hint = price_hint(model, price_text)
+        if uid == OWNER_ID:
+            await update.message.reply_text(hint, reply_markup=admin_menu())
+        else:
+            await update.message.reply_text(hint, reply_markup=user_menu())
+        del user_state[uid]
+        return
 
     if step == "province":
         temp_data[uid]["province"] = text
@@ -178,12 +209,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         global next_ad_id, pending_ads
         pending_ads[next_ad_id] = temp_data[uid]
 
-        await update.message.reply_text(
+        msg = (
             f"آگهی #{next_ad_id} ثبت شد ✅\n"
             f"بعد از تأیید مدیر، در لیست آگهی‌ها نمایش داده می‌شود.\n"
-            f"هزینه آگهی: ۷,۰۰۰,۰۰۰ ریال.",
-            reply_markup=user_menu()
+            f"هزینه آگهی: ۷,۰۰۰,۰۰۰ ریال."
         )
+        if uid == OWNER_ID:
+            await update.message.reply_text(msg, reply_markup=admin_menu())
+        else:
+            await update.message.reply_text(msg, reply_markup=user_menu())
 
         ad = temp_data[uid]
         admin_msg = (
@@ -218,7 +252,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 results.append((ad_id, ad))
 
         if not results:
-            await update.message.reply_text("چیزی پیدا نشد.", reply_markup=user_menu())
+            if uid == OWNER_ID:
+                await update.message.reply_text("چیزی پیدا نشد.", reply_markup=admin_menu())
+            else:
+                await update.message.reply_text("چیزی پیدا نشد.", reply_markup=user_menu())
         else:
             msg = ""
             for ad_id, ad in results:
@@ -228,7 +265,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"{ad['model']} - قیمت: {ad['price']}\n"
                     f"تماس: {ad['phone']}\n\n"
                 )
-            await update.message.reply_text(msg, reply_markup=user_menu())
+            if uid == OWNER_ID:
+                await update.message.reply_text(msg, reply_markup=admin_menu())
+            else:
+                await update.message.reply_text(msg, reply_markup=user_menu())
 
         del user_state[uid]
         return
@@ -275,7 +315,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- لیست آگهی‌های تأیید شده ---------------- #
 async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ads:
-        await update.message.reply_text("هیچ آگهی تأیید شده‌ای وجود ندارد.", reply_markup=user_menu())
+        if update.effective_user.id == OWNER_ID:
+            await update.message.reply_text("هیچ آگهی تأیید شده‌ای وجود ندارد.", reply_markup=admin_menu())
+        else:
+            await update.message.reply_text("هیچ آگهی تأیید شده‌ای وجود ندارد.", reply_markup=user_menu())
         return
 
     text = ""
@@ -285,7 +328,10 @@ async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{ad['model']} - قیمت: {ad['price']}\n"
         text += f"تماس: {ad['phone']}\n\n"
 
-    await update.message.reply_text(text, reply_markup=user_menu())
+    if update.effective_user.id == OWNER_ID:
+        await update.message.reply_text(text, reply_markup=admin_menu())
+    else:
+        await update.message.reply_text(text, reply_markup=user_menu())
 
 # ---------------- آگهی‌های در انتظار تأیید ---------------- #
 async def pending_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -352,17 +398,13 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("id", get_id))
     app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CommandHandler("rules", rules))
 
     app.add_handler(MessageHandler(filters.Regex("^ثبت آگهی موتور$"), new_ad))
     app.add_handler(MessageHandler(filters.Regex("^لیست آگهی‌ها$"), list_ads))
     app.add_handler(MessageHandler(filters.Regex("^آگهی‌های در انتظار تأیید$"), pending_list))
     app.add_handler(MessageHandler(filters.Regex("^جستجو$"), search))
     app.add_handler(MessageHandler(filters.Regex("^تماس با پشتیبانی$"), support))
-    app.add_handler(MessageHandler(filters.Regex("^قوانین ربات$"), rules))
-
-    app.add_handler(MessageHandler(filters.Regex("^تأیید آگهی$"), start_approve))
-    app.add_handler(MessageHandler(filters.Regex("^حذف آگهی$"), start_delete))
+    app.add_handler(MessageHandler(filters.Regex("^دستیار هوشمند$"), assistant))
 
     app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL, handle_message))
 
