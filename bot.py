@@ -1,323 +1,163 @@
 import logging
 from telegram import (
-    Update, ReplyKeyboardMarkup, KeyboardButton,
-    InlineKeyboardMarkup, InlineKeyboardButton
+    Update, ReplyKeyboardMarkup,
+    KeyboardButton
 )
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    ContextTypes, CallbackQueryHandler, filters
+    ApplicationBuilder, CommandHandler,
+    MessageHandler, ContextTypes,
+    filters
 )
 
-# ------------------ تنظیمات واقعی ------------------
-TOKEN = "8868906040:AAHbcnGXFW5diAhe8DnR6-6JKBa-NRlWYpE"
-ADMIN_ID = 1                     # آیدی عددی تلگرام خودت را اینجا بگذار
-CARD_NUMBER = "6037998216767839"
-SUPPORT_PHONE = "+989910065071"
+# ---------------- تنظیمات واقعی ----------------
+TOKEN = "8868906040:AAHbcnGXFW5diAhe8DnR6-6JKBa-NRlWYpE"   # توکن واقعی تو
+OWNER_ID = 1   # بعد از اجرای /id اینجا ایدی عددی خودت را می‌گذاری
+
+CARD_NUMBER = "6037998216767839"   # شماره کارت واقعی تو
+SUPPORT_PHONE = "+989910065071"    # شماره موبایل تو (در ربات نمایش داده نمی‌شود)
 
 logging.basicConfig(level=logging.INFO)
 
-# ------------------ دیتابیس ساده ------------------
+# ---------------- دیتابیس ساده ----------------
 ads = {}
 user_state = {}
 temp_data = {}
 next_ad_id = 1
 
-# ------------------ کیبورد اصلی ------------------
-def get_main_keyboard():
-    return ReplyKeyboardMarkup(
-        [
-            [KeyboardButton("ثبت آگهی موتور")],
-            [KeyboardButton("لیست آگهی‌ها")],
-            [KeyboardButton("ثبت امضای الکترونیک خریدار")],
-        ],
-        resize_keyboard=True
-    )
+# ---------------- دستور /id ----------------
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text(f"ایدی شما: {user_id}")
 
-# ------------------ شروع ------------------
+# ---------------- شروع ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    user_state[uid] = None
-    temp_data[uid] = {}
+    kb = [
+        ["ثبت آگهی موتور"],
+        ["لیست آگهی‌ها"],
+        ["پنل مدیریت"]
+    ]
     await update.message.reply_text(
-        "سلام، ربات خرید و فروش موتور فعال شد 🏍️\n"
-        f"پشتیبانی: {SUPPORT_PHONE}",
-        reply_markup=get_main_keyboard()
+        "سلام، ربات خرید و فروش موتور فعال شد 🏍",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
     )
 
-# ------------------ شروع ثبت آگهی ------------------
-async def start_new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    user_state[uid] = "ad_province"
-    temp_data[uid] = {}
-    await update.message.reply_text("استان را وارد کن:")
-
-# ------------------ هندلر متن ------------------
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    text = update.message.text
-    state = user_state.get(uid)
-
-    if text == "ثبت آگهی موتور":
-        await start_new_ad(update, context)
-        return
-    if text == "لیست آگهی‌ها":
-        await list_ads(update, context)
-        return
-    if text == "ثبت امضای الکترونیک خریدار":
-        await start_buyer_signature(update, context)
-        return
-
-    if state == "ad_province":
-        temp_data[uid]["province"] = text
-        user_state[uid] = "ad_city"
-        await update.message.reply_text("شهر:")
-
-    elif state == "ad_city":
-        temp_data[uid]["city"] = text
-        user_state[uid] = "ad_model"
-        await update.message.reply_text("مدل موتور:")
-
-    elif state == "ad_model":
-        temp_data[uid]["model"] = text
-        user_state[uid] = "ad_year"
-        await update.message.reply_text("سال ساخت:")
-
-    elif state == "ad_year":
-        temp_data[uid]["year"] = text
-        user_state[uid] = "ad_km"
-        await update.message.reply_text("کارکرد (کیلومتر):")
-
-    elif state == "ad_km":
-        temp_data[uid]["km"] = text
-        user_state[uid] = "ad_price"
-        await update.message.reply_text("قیمت پیشنهادی:")
-
-    elif state == "ad_price":
-        temp_data[uid]["price"] = text
-        user_state[uid] = "ad_desc"
-        await update.message.reply_text("توضیحات:")
-
-    elif state == "ad_desc":
-        temp_data[uid]["desc"] = text
-        user_state[uid] = "ad_signature_name"
-        await update.message.reply_text("نام فروشنده:")
-
-    elif state == "ad_signature_name":
-        temp_data[uid]["seller_name"] = text
-        user_state[uid] = "ad_signature_national"
-        await update.message.reply_text("کد ملی فروشنده:")
-
-    elif state == "ad_signature_national":
-        temp_data[uid]["seller_national"] = text
-        user_state[uid] = "ad_signature_text"
-        await update.message.reply_text("متن امضای فروشنده:")
-
-    elif state == "ad_signature_text":
-        temp_data[uid]["seller_signature"] = text
-        user_state[uid] = "ad_photo_front"
-        await update.message.reply_text("عکس موتور از روبه‌رو را ارسال کن:")
-
-    else:
-        await update.message.reply_text("از دکمه‌ها استفاده کن.")
-
-# ------------------ عکس‌ها ------------------
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    state = user_state.get(uid)
-    file_id = update.message.photo[-1].file_id
-
-    if state == "ad_photo_front":
-        temp_data[uid]["photo_front"] = file_id
-        user_state[uid] = "ad_photo_side"
-        await update.message.reply_text("عکس موتور از بغل:")
-
-    elif state == "ad_photo_side":
-        temp_data[uid]["photo_side"] = file_id
-        user_state[uid] = "ad_photo_back"
-        await update.message.reply_text("عکس موتور از عقب:")
-
-    elif state == "ad_photo_back":
-        temp_data[uid]["photo_back"] = file_id
-        await finalize_ad(update, context)
-
-    else:
-        await update.message.reply_text("در مرحله ثبت عکس نیستی.")
-
-# ------------------ نهایی‌سازی آگهی ------------------
-async def finalize_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ---------------- ثبت آگهی ----------------
+async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global next_ad_id
+
+    user_state[update.effective_user.id] = "province"
+    temp_data[update.effective_user.id] = {}
+
+    await update.message.reply_text("استان را وارد کن:")
+    return
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    data = temp_data[uid]
-    ad_id = next_ad_id
-    next_ad_id += 1
 
-    ads[ad_id] = {
-        "id": ad_id,
-        "owner_id": uid,
-        "province": data["province"],
-        "city": data["city"],
-        "model": data["model"],
-        "year": data["year"],
-        "km": data["km"],
-        "price": data["price"],
-        "desc": data["desc"],
-        "seller_name": data["seller_name"],
-        "seller_national": data["seller_national"],
-        "seller_signature": data["seller_signature"],
-        "photo_front": data["photo_front"],
-        "photo_side": data["photo_side"],
-        "photo_back": data["photo_back"],
-        "paid": False,
-        "buyer_signature": None,
-    }
+    if uid not in user_state:
+        return
 
-    user_state[uid] = None
-    temp_data[uid] = {}
+    step = user_state[uid]
+    text = update.message.text
 
-    await update.message.reply_text(
-        f"آگهی #{ad_id} ثبت شد.\n"
-        f"هزینه آگهی: ۷,۰۰۰,۰۰۰ ریال\n"
-        f"واریز به کارت: {CARD_NUMBER}\n"
-        f"بعد از واریز، رسید را برای ادمین ارسال کن.\n"
-        f"پشتیبانی: {SUPPORT_PHONE}",
-        reply_markup=get_main_keyboard()
-    )
+    if step == "province":
+        temp_data[uid]["province"] = text
+        user_state[uid] = "city"
+        await update.message.reply_text("شهر را وارد کن:")
+        return
 
-# ------------------ لیست آگهی‌ها ------------------
+    if step == "city":
+        temp_data[uid]["city"] = text
+        user_state[uid] = "model"
+        await update.message.reply_text("مدل موتور:")
+        return
+
+    if step == "model":
+        temp_data[uid]["model"] = text
+        user_state[uid] = "price"
+        await update.message.reply_text("قیمت:")
+        return
+
+    if step == "price":
+        temp_data[uid]["price"] = text
+        user_state[uid] = "phone"
+        await update.message.reply_text("شماره تماس:")
+        return
+
+    if step == "phone":
+        temp_data[uid]["phone"] = text
+
+        global next_ad_id
+        ads[next_ad_id] = temp_data[uid]
+        await update.message.reply_text(f"آگهی #{next_ad_id} ثبت شد ✅")
+
+        next_ad_id += 1
+        del user_state[uid]
+        del temp_data[uid]
+        return
+
+# ---------------- لیست آگهی‌ها ----------------
 async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ads:
         await update.message.reply_text("هیچ آگهی‌ای ثبت نشده.")
         return
 
-    msg = "🏍️ لیست آگهی‌ها:\n"
-    for ad in ads.values():
-        msg += (
-            f"\n#{ad['id']} - {ad['model']} | {ad['year']} | {ad['km']} km\n"
-            f"{ad['province']} / {ad['city']}\n"
-            f"قیمت: {ad['price']} ریال\n"
-            f"پرداخت: {'تأیید شده' if ad['paid'] else 'در انتظار'}\n"
-        )
+    text = ""
+    for ad_id, ad in ads.items():
+        text += f"آگهی #{ad_id}\n"
+        text += f"{ad['province']} - {ad['city']}\n"
+        text += f"{ad['model']} - قیمت: {ad['price']}\n"
+        text += f"تماس: {ad['phone']}\n\n"
 
-    await update.message.reply_text(msg)
+    await update.message.reply_text(text)
 
-    await update.message.reply_text(
-        "برای مشاهده جزئیات:",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("جزئیات آگهی‌ها", callback_data="show_ads_detail")]
-        ])
-    )
-
-# ------------------ جزئیات آگهی‌ها ------------------
-async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "show_ads_detail":
-        for ad in ads.values():
-            text = (
-                f"آگهی #{ad['id']}\n"
-                f"مدل: {ad['model']}\n"
-                f"سال: {ad['year']}\n"
-                f"کارکرد: {ad['km']} km\n"
-                f"{ad['province']} / {ad['city']}\n"
-                f"قیمت: {ad['price']} ریال\n"
-                f"توضیحات: {ad['desc']}\n"
-                f"فروشنده: {ad['seller_name']} ({ad['seller_national']})\n"
-                f"امضا: {ad['seller_signature']}\n"
-                f"پرداخت: {'تأیید شده' if ad['paid'] else 'در انتظار'}\n"
-            )
-            await query.message.reply_text(text)
-
-            if ad["paid"]:
-                await context.bot.send_photo(query.message.chat_id, ad["photo_front"], caption="نمای جلو")
-                await context.bot.send_photo(query.message.chat_id, ad["photo_side"], caption="نمای بغل")
-                await context.bot.send_photo(query.message.chat_id, ad["photo_back"], caption="نمای عقب")
-            else:
-                await query.message.reply_text("پرداخت تأیید نشده؛ عکس‌ها نمایش داده نمی‌شود.")
-
-# ------------------ امضای خریدار ------------------
-async def start_buyer_signature(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    user_state[uid] = "buyer_ad_id"
-    temp_data[uid] = {}
-    await update.message.reply_text("شماره آگهی:")
-
-async def handle_buyer_signature_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    text = update.message.text
-    state = user_state.get(uid)
-
-    if state == "buyer_ad_id":
-        try:
-            ad_id = int(text)
-        except:
-            await update.message.reply_text("عدد وارد کن.")
-            return
-        if ad_id not in ads:
-            await update.message.reply_text("آگهی وجود ندارد.")
-            return
-        temp_data[uid]["ad_id"] = ad_id
-        user_state[uid] = "buyer_name"
-        await update.message.reply_text("نام خریدار:")
-
-    elif state == "buyer_name":
-        temp_data[uid]["buyer_name"] = text
-        user_state[uid] = "buyer_national"
-        await update.message.reply_text("کد ملی خریدار:")
-
-    elif state == "buyer_national":
-        temp_data[uid]["buyer_national"] = text
-        user_state[uid] = "buyer_signature_text"
-        await update.message.reply_text("متن امضای خریدار:")
-
-    elif state == "buyer_signature_text":
-        ad_id = temp_data[uid]["ad_id"]
-        ads[ad_id]["buyer_signature"] = {
-            "name": temp_data[uid]["buyer_name"],
-            "national": temp_data[uid]["buyer_national"],
-            "text": text,
-        }
-        user_state[uid] = None
-        temp_data[uid] = {}
-        await update.message.reply_text("امضای خریدار ثبت شد.", reply_markup=get_main_keyboard())
-
-    else:
-        await handle_text(update, context)
-
-# ------------------ ادمین: تأیید پرداخت ------------------
-async def admin_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("فقط ادمین.")
+# ---------------- پنل مدیریت ----------------
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("شما مدیر نیستید.")
         return
 
-    parts = update.message.text.split()
-    if len(parts) != 2:
-        await update.message.reply_text("فرمت:\n/confirm_ad <id>")
+    kb = [
+        ["لیست آگهی‌ها"],
+        ["حذف آگهی"]
+    ]
+
+    await update.message.reply_text(
+        "پنل مدیریت فعال شد:",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+    )
+
+# ---------------- حذف آگهی ----------------
+async def delete_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("شما مدیر نیستید.")
         return
 
     try:
-        ad_id = int(parts[1])
+        ad_id = int(update.message.text)
+        if ad_id in ads:
+            del ads[ad_id]
+            await update.message.reply_text(f"آگهی #{ad_id} حذف شد.")
+        else:
+            await update.message.reply_text("آگهی پیدا نشد.")
     except:
-        await update.message.reply_text("عدد وارد کن.")
-        return
+        await update.message.reply_text("شماره آگهی نامعتبر است.")
 
-    if ad_id not in ads:
-        await update.message.reply_text("آگهی وجود ندارد.")
-        return
+# ---------------- اجرای ربات ----------------
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    ads[ad_id]["paid"] = True
-    await update.message.reply_text(f"پرداخت آگهی #{ad_id} تأیید شد.")
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("id", get_id))
 
-    owner = ads[ad_id]["owner_id"]
-    await context.bot.send_message(owner, f"پرداخت آگهی #{ad_id} تأیید شد. عکس‌ها فعال شدند.")
+    app.add_handler(MessageHandler(filters.Regex("^ثبت آگهی موتور$"), new_ad))
+    app.add_handler(MessageHandler(filters.Regex("^لیست آگهی‌ها$"), list_ads))
+    app.add_handler(MessageHandler(filters.Regex("^پنل مدیریت$"), admin_panel))
+    app.add_handler(MessageHandler(filters.Regex("^[0-9]+$"), delete_ad))
 
-# ------------------ اجرای ربات ------------------
-app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("confirm_ad", admin_confirm))
-app.add_handler(CallbackQueryHandler(callback_handler))
-app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buyer_signature_text))
+    app.run_polling()
 
-app.run_polling()
+if __name__ == "__main__":
+    main()
