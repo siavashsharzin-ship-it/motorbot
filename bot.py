@@ -1,5 +1,4 @@
 import logging
-import os
 import re
 from telegram import (
     Update, ReplyKeyboardMarkup, InputMediaPhoto
@@ -9,16 +8,16 @@ from telegram.ext import (
     MessageHandler, ContextTypes, filters
 )
 
-# ---------------- تنظیمات امن ---------------- #
-TOKEN = os.getenv("TOKEN")
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
-SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "")
-CARD_NUMBER = os.getenv("CARD_NUMBER", "")
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "")
+# ---------------- تنظیمات ---------------- #
+TOKEN = "8868906040:AAHFEcVX4u6Nh-K2AJG_9KDIix3PENqA4sc"
+OWNER_ID = 8474856910
+SUPPORT_PHONE = "+989910065071"
+CARD_NUMBER = ""
+CHANNEL_USERNAME = "persian_motor"   # یوزرنیم کانال
 
 logging.basicConfig(level=logging.INFO)
 
-# ---------------- دیتابیس ساده ---------------- #
+# ---------------- دیتابیس ---------------- #
 ads = {}            # آگهی‌های تأیید شده
 pending_ads = {}    # آگهی‌های در انتظار تأیید
 user_state = {}
@@ -45,8 +44,6 @@ def admin_menu():
 
 # ---------------- پیشنهاد عضویت کانال ---------------- #
 async def suggest_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not CHANNEL_USERNAME:
-        return
     try:
         member = await context.bot.get_chat_member(f"@{CHANNEL_USERNAME}", update.effective_user.id)
         if member.status not in ["member", "administrator", "creator"]:
@@ -126,36 +123,44 @@ def extract_info(text: str):
         "price": None
     }
 
+    # مدل: اولین کلمه‌ها تا قبل از "مدل"
     m_model = re.search(r"(.+?)مدل", text)
     if m_model:
         info["model"] = m_model.group(1).strip()
 
+    # سال
     m_year = re.search(r"مدل\s*(\d{4})", text)
     if m_year:
         info["year"] = int(m_year.group(1))
 
+    # کارکرد
     m_km = re.search(r"کارکرد\s*([\d]+)", text)
     if m_km:
         info["km"] = int(m_km.group(1))
 
+    # رنگ
     m_color = re.search(r"رنگ\s*([آ-ی\s]+?)(،|$)", text)
     if m_color:
         info["color"] = m_color.group(1).strip()
 
+    # تصادف
     if "بدون تصادف" in text or "بی‌تصادف" in text:
         info["accident"] = "بدون تصادف"
     elif "تصادف" in text:
         info["accident"] = "تصادفی"
 
+    # سند
     if "سند تک‌برگ" in text or "سند تک برگ" in text:
         info["document"] = "تک‌برگ"
     elif "سند" in text:
         info["document"] = "دارای سند"
 
+    # بیمه
     m_ins = re.search(r"بیمه\s*([\d]+)\s*ماه", text)
     if m_ins:
         info["insurance"] = int(m_ins.group(1))
 
+    # قیمت
     m_price = re.search(r"قیمت\s*([\d]+)", text)
     if m_price:
         info["price"] = int(m_price.group(1))
@@ -172,6 +177,7 @@ def expert_analysis(info: dict) -> str:
     price = info["price"]
 
     lines = []
+
     lines.append("📋 گزارش کارشناسی موتور:\n")
 
     if info["model"]:
@@ -193,6 +199,7 @@ def expert_analysis(info: dict) -> str:
 
     lines.append("\n🔍 تحلیل کارشناسی:")
 
+    # تحلیل قیمت بر اساس مدل و سال و کارکرد
     comment_price = "اطلاعات قیمت کافی نیست."
     if price is not None:
         if "هوندا" in model or "125" in model:
@@ -205,6 +212,7 @@ def expert_analysis(info: dict) -> str:
             base_min, base_max = None, None
 
         if base_min and base_max:
+            # تعدیل بر اساس سال و کارکرد
             if year and year >= 1400:
                 base_min *= 1.1
                 base_max *= 1.1
@@ -222,16 +230,19 @@ def expert_analysis(info: dict) -> str:
 
     lines.append(f"• {comment_price}")
 
+    # تحلیل تصادف
     if accident == "بدون تصادف":
         lines.append("• عدم گزارش تصادف، امتیاز مثبت برای ارزش خرید است.")
     elif accident == "تصادفی":
         lines.append("• وجود سابقهٔ تصادف، نیازمند بررسی دقیق شاسی و فریم است.")
 
+    # تحلیل سند
     if document == "تک‌برگ":
         lines.append("• سند تک‌برگ، وضعیت حقوقی موتور را شفاف‌تر می‌کند.")
     elif document == "دارای سند":
         lines.append("• وجود سند، نکتهٔ مثبت است؛ توصیه می‌شود تطبیق پلاک و شماره موتور انجام شود.")
 
+    # تحلیل بیمه
     if insurance is not None:
         if insurance >= 6:
             lines.append("• بیمهٔ باقیمانده مناسب است و هزینهٔ اولیهٔ خریدار را کاهش می‌دهد.")
@@ -364,13 +375,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"تماس: {ad['phone']}"
                 )
 
-                if CHANNEL_USERNAME:
-                    if ad["photos"]:
-                        media = [InputMediaPhoto(photo_id, caption=caption if i == 0 else "") 
-                                 for i, photo_id in enumerate(ad["photos"])]
-                        await context.bot.send_media_group(chat_id=f"@{CHANNEL_USERNAME}", media=media)
-                    else:
-                        await context.bot.send_message(chat_id=f"@{CHANNEL_USERNAME}", text=caption)
+                if ad["photos"]:
+                    media = [InputMediaPhoto(photo_id, caption=caption if i == 0 else "") 
+                             for i, photo_id in enumerate(ad["photos"])]
+                    await context.bot.send_media_group(chat_id=f"@{CHANNEL_USERNAME}", media=media)
+                else:
+                    await context.bot.send_message(chat_id=f"@{CHANNEL_USERNAME}", text=caption)
 
                 await msg.reply_text(f"آگهی #{ad_id} تأیید و در کانال منتشر شد ✅", reply_markup=admin_menu())
                 del pending_ads[ad_id]
@@ -502,8 +512,6 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- اجرای ربات ---------------- #
 def main():
-    if not TOKEN:
-        raise RuntimeError("TOKEN در متغیرهای محیطی تنظیم نشده است.")
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
