@@ -1,4 +1,5 @@
 import logging
+import re
 from telegram import (
     Update, ReplyKeyboardMarkup, InputMediaPhoto
 )
@@ -41,7 +42,7 @@ def admin_menu():
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
-# ---------------- چک عضویت کانال (فقط پیشنهاد، نه اجباری) ---------------- #
+# ---------------- پیشنهاد عضویت کانال ---------------- #
 async def suggest_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         member = await context.bot.get_chat_member(f"@{CHANNEL_USERNAME}", update.effective_user.id)
@@ -98,49 +99,170 @@ async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     temp_data[uid] = {"photos": []}
     await update.message.reply_text("استان:")
 
-# ---------------- دستیار هوشمند ---------------- #
+# ---------------- دستیار هوشمند کارشناسی ---------------- #
 async def assistant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user_state[uid] = "assistant"
     await update.message.reply_text(
-        "🤖 دستیار فعال شد.\n"
-        "مدل موتور و قیمت پیشنهادی را بنویس.\n"
-        "مثال: آپاچی 180، 120000000"
+        "🤖 دستیار کارشناسی فعال شد.\n"
+        "مشخصات موتور را یکجا بنویس:\n"
+        "مدل، سال، کارکرد، رنگ، تصادفی/بی‌تصادف، سند، بیمه، قیمت پیشنهادی.\n"
+        "مثال:\n"
+        "آپاچی 180 مدل 1400، کارکرد 35000، رنگ مشکی، بدون تصادف، سند تک‌برگ، بیمه 6 ماه، قیمت 175000000"
     )
 
-def smart_price(model, price):
-    model = model.lower()
+def extract_info(text: str):
+    info = {
+        "model": None,
+        "year": None,
+        "km": None,
+        "color": None,
+        "accident": None,
+        "document": None,
+        "insurance": None,
+        "price": None
+    }
 
-    if "هوندا" in model or "125" in model:
-        if price < 45000000: return "💬 قیمت خیلی پایین است."
-        if price > 150000000: return "💬 قیمت خیلی بالاست."
-        return "💬 قیمت منطقی است."
+    # مدل: اولین کلمه‌ها تا قبل از "مدل"
+    m_model = re.search(r"(.+?)مدل", text)
+    if m_model:
+        info["model"] = m_model.group(1).strip()
 
-    if "آپاچی" in model or "apache" in model or "180" in model:
-        if price < 90000000: return "💬 قیمت پایین است."
-        if price > 230000000: return "💬 قیمت بالاست."
-        return "💬 قیمت منطقی است."
+    # سال
+    m_year = re.search(r"مدل\s*(\d{4})", text)
+    if m_year:
+        info["year"] = int(m_year.group(1))
 
-    if "پالس" in model or "bajaj" in model:
-        if price < 70000000: return "💬 قیمت پایین است."
-        if price > 200000000: return "💬 قیمت بالاست."
-        return "💬 قیمت مناسب است."
+    # کارکرد
+    m_km = re.search(r"کارکرد\s*([\d]+)", text)
+    if m_km:
+        info["km"] = int(m_km.group(1))
 
-    return "💬 مدل موتور ناشناس است."
+    # رنگ
+    m_color = re.search(r"رنگ\s*([آ-ی\s]+?)(،|$)", text)
+    if m_color:
+        info["color"] = m_color.group(1).strip()
+
+    # تصادف
+    if "بدون تصادف" in text or "بی‌تصادف" in text:
+        info["accident"] = "بدون تصادف"
+    elif "تصادف" in text:
+        info["accident"] = "تصادفی"
+
+    # سند
+    if "سند تک‌برگ" in text or "سند تک برگ" in text:
+        info["document"] = "تک‌برگ"
+    elif "سند" in text:
+        info["document"] = "دارای سند"
+
+    # بیمه
+    m_ins = re.search(r"بیمه\s*([\d]+)\s*ماه", text)
+    if m_ins:
+        info["insurance"] = int(m_ins.group(1))
+
+    # قیمت
+    m_price = re.search(r"قیمت\s*([\d]+)", text)
+    if m_price:
+        info["price"] = int(m_price.group(1))
+
+    return info
+
+def expert_analysis(info: dict) -> str:
+    model = (info["model"] or "").lower()
+    year = info["year"]
+    km = info["km"]
+    accident = info["accident"]
+    document = info["document"]
+    insurance = info["insurance"]
+    price = info["price"]
+
+    lines = []
+
+    lines.append("📋 گزارش کارشناسی موتور:\n")
+
+    if info["model"]:
+        lines.append(f"• مدل: {info['model']}")
+    if year:
+        lines.append(f"• سال ساخت: {year}")
+    if km is not None:
+        lines.append(f"• کارکرد: {km} کیلومتر")
+    if info["color"]:
+        lines.append(f"• رنگ: {info['color']}")
+    if accident:
+        lines.append(f"• وضعیت تصادف: {accident}")
+    if document:
+        lines.append(f"• وضعیت سند: {document}")
+    if insurance is not None:
+        lines.append(f"• بیمه: {insurance} ماه")
+    if price is not None:
+        lines.append(f"• قیمت پیشنهادی: {price} تومان")
+
+    lines.append("\n🔍 تحلیل کارشناسی:")
+
+    # تحلیل قیمت بر اساس مدل و سال و کارکرد
+    comment_price = "اطلاعات قیمت کافی نیست."
+    if price is not None:
+        if "هوندا" in model or "125" in model:
+            base_min, base_max = 45000000, 150000000
+        elif "آپاچی" in model or "apache" in model or "180" in model:
+            base_min, base_max = 90000000, 230000000
+        elif "پالس" in model or "bajaj" in model:
+            base_min, base_max = 70000000, 200000000
+        else:
+            base_min, base_max = None, None
+
+        if base_min and base_max:
+            # تعدیل بر اساس سال و کارکرد
+            if year and year >= 1400:
+                base_min *= 1.1
+                base_max *= 1.1
+            if km and km > 50000:
+                base_max *= 0.9
+
+            if price < base_min:
+                comment_price = "قیمت پیشنهادی پایین‌تر از محدودهٔ معمول بازار است."
+            elif price > base_max:
+                comment_price = "قیمت پیشنهادی بالاتر از محدودهٔ معمول بازار است."
+            else:
+                comment_price = "قیمت پیشنهادی در محدودهٔ منطقی بازار قرار دارد."
+        else:
+            comment_price = "مدل موتور ناشناس است؛ قیمت به‌صورت دقیق قابل ارزیابی نیست."
+
+    lines.append(f"• {comment_price}")
+
+    # تحلیل تصادف
+    if accident == "بدون تصادف":
+        lines.append("• عدم گزارش تصادف، امتیاز مثبت برای ارزش خرید است.")
+    elif accident == "تصادفی":
+        lines.append("• وجود سابقهٔ تصادف، نیازمند بررسی دقیق شاسی و فریم است.")
+
+    # تحلیل سند
+    if document == "تک‌برگ":
+        lines.append("• سند تک‌برگ، وضعیت حقوقی موتور را شفاف‌تر می‌کند.")
+    elif document == "دارای سند":
+        lines.append("• وجود سند، نکتهٔ مثبت است؛ توصیه می‌شود تطبیق پلاک و شماره موتور انجام شود.")
+
+    # تحلیل بیمه
+    if insurance is not None:
+        if insurance >= 6:
+            lines.append("• بیمهٔ باقیمانده مناسب است و هزینهٔ اولیهٔ خریدار را کاهش می‌دهد.")
+        else:
+            lines.append("• بیمهٔ کم، هزینهٔ اضافی برای خریدار ایجاد می‌کند.")
+
+    lines.append("\n✅ جمع‌بندی کارشناسی:")
+    if price is not None and accident != "تصادفی":
+        lines.append("در صورت تأیید سلامت فنی موتور (انجین، جلوبندی، سیستم ترمز) و عدم نشتی روغن، این قیمت می‌تواند قابل قبول باشد.")
+    else:
+        lines.append("توصیه می‌شود پیش از خرید، بازدید حضوری و تست فنی کامل انجام شود.")
+
+    return "\n".join(lines)
 
 async def handle_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text
 
-    try:
-        parts = text.split("،")
-        model = parts[0].strip()
-        price = int("".join(ch for ch in parts[1] if ch.isdigit()))
-    except:
-        await update.message.reply_text("❗ مثال صحیح: آپاچی 180، 120000000")
-        return
-
-    result = smart_price(model, price)
+    info = extract_info(text)
+    result = expert_analysis(info)
 
     if uid == OWNER_ID:
         await update.message.reply_text(result, reply_markup=admin_menu())
@@ -154,7 +276,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     msg = update.message
 
-    # عکس‌ها فقط در مرحلهٔ ثبت آگهی مجازند
     if msg.photo:
         if uid in user_state and user_state[uid] == "photos":
             photo_id = msg.photo[-1].file_id
@@ -172,12 +293,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     step = user_state[uid]
 
-    # دستیار
     if step == "assistant":
         await handle_assistant(update, context)
         return
 
-    # ثبت آگهی مرحله‌ای
     if step == "province":
         temp_data[uid]["province"] = text
         user_state[uid] = "city"
@@ -237,7 +356,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("اگر عکس دیگری نداری، بنویس: تمام")
             return
 
-    # تأیید آگهی
     if step == "approve":
         if uid != OWNER_ID:
             await msg.reply_text("فقط مدیر.", reply_markup=user_menu())
@@ -250,7 +368,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ads[ad_id] = pending_ads[ad_id]
                 ad = ads[ad_id]
 
-                # ارسال آگهی کامل به کانال (متن + عکس‌ها)
                 caption = (
                     f"آگهی #{ad_id}\n"
                     f"{ad['province']} - {ad['city']}\n"
@@ -275,7 +392,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del user_state[uid]
         return
 
-    # حذف آگهی
     if step == "delete":
         if uid != OWNER_ID:
             await msg.reply_text("فقط مدیر.", reply_markup=user_menu())
@@ -293,6 +409,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("شماره آگهی نامعتبر است.", reply_markup=admin_menu())
 
         del user_state[uid]
+        return
+
+    if step == "search":
+        await handle_search(update, context)
         return
 
 # ---------------- لیست آگهی‌های تأیید شده ---------------- #
