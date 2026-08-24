@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 
 # ---------------- تنظیمات ---------------- #
-TOKEN = "8868906040:AAHbcnGXFW5diAhe8DnR6-6JKBa-NRlWYpE"
+TOKEN = "8868906040:AAHFEcVX4u6Nh-K2AJG_9KDIix3PENqA4sc"
 OWNER_ID = 8474856910
 SUPPORT_PHONE = "+989910065071"
 CARD_NUMBER = "6037998216767839"
@@ -68,7 +68,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text
 
-    # اگر در هیچ مرحله‌ای نیست، پیام را نادیده بگیر
     if uid not in user_state:
         return
 
@@ -105,14 +104,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         global next_ad_id, pending_ads
         pending_ads[next_ad_id] = temp_data[uid]
 
-        # پیام برای کاربر
         await update.message.reply_text(
             f"آگهی #{next_ad_id} ثبت شد ✅\n"
             f"بعد از تأیید مدیر، در لیست آگهی‌ها نمایش داده می‌شود.",
             reply_markup=main_menu()
         )
 
-        # نوتیفیکیشن فوری برای مدیر
         ad = temp_data[uid]
         admin_msg = (
             f"🔔 آگهی جدید در انتظار تأیید:\n\n"
@@ -162,7 +159,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del user_state[uid]
         return
 
-    # تأیید آگهی (وارد کردن شماره)
+    # تأیید آگهی
     if step == "approve_waiting":
         if uid != OWNER_ID:
             await update.message.reply_text("این بخش فقط برای مدیر است.", reply_markup=main_menu())
@@ -183,7 +180,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del user_state[uid]
         return
 
-    # حذف آگهی (وارد کردن شماره)
+    # حذف آگهی
     if step == "delete_waiting":
         if uid != OWNER_ID:
             await update.message.reply_text("این بخش فقط برای مدیر است.", reply_markup=main_menu())
