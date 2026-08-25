@@ -61,11 +61,6 @@ def admin_menu():
         resize_keyboard=True
     )
 
-# -------------------- /id -------------------- #
-
-async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"ایدی عددی شما: {update.effective_user.id}")
-
 # -------------------- شروع -------------------- #
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -271,26 +266,28 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "owner_id": uid
                 }
 
-                buttons = InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton("✔ تایید", callback_data=f"approve_{ad_id}"),
-                        InlineKeyboardButton("❌ حذف", callback_data=f"delete_{ad_id}")
-                    ]
-                ])
-
                 await update.message.reply_text(
-                    f"آگهی #{ad_id} آماده شد و برای مدیر ارسال شد.",
-                    reply_markup=buttons
+                    f"برای ثبت آگهی #{ad_id} مبلغ ۷۰۰۰۰۰۰ ریال را به کارت زیر واریز کنید:\n{CARD_NUMBER}\n\nپس از پرداخت، رسید را ارسال کنید."
                 )
 
-                await send_to_admin(context, ad_id, pending_ads[ad_id])
-
-                del user_state[uid]
+                user_state[uid] = f"waitpay_{ad_id}"
                 return
 
             else:
                 await update.message.reply_text("اگر عکس دیگری نداری بنویس: تمام")
                 return
+
+        if st.startswith("waitpay_"):
+            ad_id = int(st.split("_")[1])
+
+            await update.message.reply_text(
+                "رسید دریافت شد. آگهی برای مدیر ارسال شد."
+            )
+
+            await send_to_admin(context, ad_id, pending_ads[ad_id])
+
+            del user_state[uid]
+            return
 
     # دستورات مشتری
     if text == "ثبت آگهی موتور":
