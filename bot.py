@@ -61,6 +61,11 @@ def is_valid_price(t):
 def is_valid_phone(t):
     return t.isdigit() and len(t) == 11
 
+# -------------------- /id -------------------- #
+
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"ایدی عددی شما: {update.effective_user.id}")
+
 # -------------------- شروع -------------------- #
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,7 +147,6 @@ async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"تماس: {ad['phone']}"
         )
 
-        # دکمه حذف برای صاحب آگهی
         if ad["owner_id"] == uid:
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🗑 حذف آگهی من", callback_data=f"mydelete_{ad_id}")]
@@ -199,13 +203,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     msg = update.message
 
-    # مرحله عکس‌های آگهی
     if uid in user_state and user_state[uid] == "photos":
         temp_data[uid]["photos"].append(msg.photo[-1].file_id)
         await msg.reply_text("عکس اضافه شد. اگر تمام شد بنویس: تمام")
         return
 
-    # مرحله رسید پرداخت
     if uid in user_state and user_state[uid].startswith("payment_"):
         ad_id = int(user_state[uid].split("_")[1])
         await msg.reply_text("رسید دریافت شد. آگهی برای مدیر ارسال شد.")
@@ -223,7 +225,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     text = msg.text.strip()
 
-    # مراحل ثبت آگهی
     if uid in user_state:
         st = user_state[uid]
 
@@ -316,7 +317,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "owner_id": uid
                 }
 
-                # پیام نهایی به مشتری با دکمه‌ها
                 buttons = InlineKeyboardMarkup([
                     [InlineKeyboardButton("📤 ثبت برای خریداران", callback_data=f"user_publish_{ad_id}")],
                     [InlineKeyboardButton("🗑 حذف آگهی", callback_data=f"user_delete_{ad_id}")]
@@ -334,7 +334,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.reply_text("اگر عکس دیگری نداری بنویس: تمام")
                 return
 
-    # دستورات اصلی
     if text == "ثبت آگهی موتور":
         await new_ad(update, context)
     elif text == "لیست آگهی‌ها":
@@ -353,14 +352,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    # مشتری: ثبت برای خریداران
     if data.startswith("user_publish_"):
         ad_id = int(data.split("_")[2])
         await query.edit_message_text("آگهی برای مدیر ارسال شد. منتظر تأیید باشید.")
         await send_to_admin(context, ad_id, pending_ads[ad_id])
         return
 
-    # مشتری: حذف آگهی
     if data.startswith("user_delete_"):
         ad_id = int(data.split("_")[2])
         if ad_id in pending_ads:
@@ -368,7 +365,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("آگهی حذف شد.")
         return
 
-    # مدیر: تأیید
     if data.startswith("approve_"):
         ad_id = int(data.split("_")[1])
         ads[ad_id] = pending_ads[ad_id]
@@ -376,17 +372,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"آگهی #{ad_id} ✔ تأیید شد.")
         return
 
-    # مدیر: حذف
     if data.startswith("delete_"):
         ad_id = int(data.split("_")[1])
-        del pending_ads[ad_id]
+        if ad_id in pending_ads:
+            del pending_ads[ad_id]
         await query.edit_message_text(f"آگهی #{ad_id} ❌ حذف شد.")
         return
 
-    # صاحب آگهی: حذف آگهی تایید شده
     if data.startswith("mydelete_"):
         ad_id = int(data.split("_")[1])
-        del ads[ad_id]
+        if ad_id in ads:
+            del ads[ad_id]
         await query.edit_message_text("آگهی شما حذف شد.")
         return
 
