@@ -25,41 +25,40 @@ OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "")
 CARD_NUMBER = os.getenv("CARD_NUMBER", "")
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# -------------------- داده‌ها -------------------- #
+# -------------------- دیتابیس -------------------- #
 
-ads: Dict[int, Dict[str, Any]] = {}          # آگهی‌های تایید شده
-pending_ads: Dict[int, Dict[str, Any]] = {}  # آگهی‌های در انتظار تأیید
-user_state: Dict[int, str] = {}              # وضعیت مرحله هر کاربر
-temp_data: Dict[int, Dict[str, Any]] = {}    # دادهٔ موقت ثبت آگهی
-next_ad_id: int = 1                          # شماره آگهی بعدی
+ads = {}             # آگهی‌های تایید شده
+pending_ads = {}     # آگهی‌های در انتظار تایید
+sold_ads = {}        # آگهی‌های فروخته شده
+deleted_ads = {}     # آگهی‌های حذف شده
+user_state = {}      # مرحلهٔ کاربر
+temp_data = {}       # دادهٔ موقت
+next_ad_id = 1       # شماره آگهی
 
-# -------------------- منوها -------------------- #
+# -------------------- منو -------------------- #
 
 def user_menu():
     return ReplyKeyboardMarkup(
-        [["ثبت آگهی موتور", "لیست آگهی‌ها"], ["تماس با پشتیبانی"]],
+        [
+            ["ثبت آگهی موتور", "لیست آگهی‌ها"],
+            ["لیست فروش", "لیست انتظار"],
+            ["تماس با پشتیبانی"]
+        ],
         resize_keyboard=True
     )
 
 def admin_menu():
     return ReplyKeyboardMarkup(
-        [["ثبت آگهی موتور", "لیست آگهی‌ها"], ["آگهی‌های در انتظار تأیید", "تماس با پشتیبانی"]],
+        [
+            ["آگهی‌های در انتظار تایید", "لیست آگهی‌ها"],
+            ["لیست فروش", "لیست حذف‌شده‌ها"],
+            ["تماس با پشتیبانی"]
+        ],
         resize_keyboard=True
     )
-
-# -------------------- اعتبارسنجی -------------------- #
-
-def is_valid_price(t):
-    return t.isdigit() and int(t) > 0
-
-def is_valid_phone(t):
-    return t.isdigit() and len(t) == 11
 
 # -------------------- /id -------------------- #
 
@@ -70,10 +69,20 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+
+    welcome = (
+        "سلام موتورباز عزیز🔥\n"
+        "به بزرگترین ربات خرید و فروش موتورسیکلت ایران خوش آمدید.\n\n"
+        "📌 قوانین:\n"
+        "• مبلغ ۷۰۰۰۰۰۰ ریال باید واریز شود تا آگهی شما ثبت شود.\n"
+        "• آگهی شما تا زمان فروش موتور بدون محدودیت زمانی در ربات باقی می‌ماند.\n"
+        "• پس از ثبت آگهی، مدیر بررسی و تایید می‌کند.\n"
+    )
+
     if uid == OWNER_ID:
-        await update.message.reply_text("سلام مدیر عزیز👑", reply_markup=admin_menu())
+        await update.message.reply_text(welcome, reply_markup=admin_menu())
     else:
-        await update.message.reply_text("سلام موتوریاز عزیز🔥", reply_markup=user_menu())
+        await update.message.reply_text(welcome, reply_markup=user_menu())
 
 # -------------------- پشتیبانی -------------------- #
 
@@ -85,6 +94,14 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "برای هماهنگی تماس یا واتساپ."
     )
     await update.message.reply_text(text)
+
+# -------------------- ثبت آگهی -------------------- #
+
+async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    user_state[uid] = "province"
+    temp_data[uid] = {"photos": []}
+    await update.message.reply_text("استان موتور را بنویس:")
 
 # -------------------- ارسال آگهی برای مدیر -------------------- #
 
@@ -102,7 +119,7 @@ async def send_to_admin(context, ad_id, ad):
 
     buttons = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✔ تأیید", callback_data=f"approve_{ad_id}"),
+            InlineKeyboardButton("✔ تایید", callback_data=f"approve_{ad_id}"),
             InlineKeyboardButton("❌ حذف", callback_data=f"delete_{ad_id}")
         ]
     ])
@@ -118,19 +135,9 @@ async def send_to_admin(context, ad_id, ad):
         reply_markup=buttons
     )
 
-# -------------------- ثبت آگهی -------------------- #
-
-async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    user_state[uid] = "province"
-    temp_data[uid] = {"photos": []}
-    await update.message.reply_text("استان موتور را بنویس:")
-
-# -------------------- لیست آگهی‌ها -------------------- #
+# -------------------- لیست‌ها -------------------- #
 
 async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-
     if not ads:
         await update.message.reply_text("هیچ آگهی تایید شده‌ای وجود ندارد.")
         return
@@ -141,26 +148,14 @@ async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{ad['province']} - {ad['city']}\n"
             f"{ad['motor_type']} | {ad['model']}\n"
             f"سال: {ad['year']} | کارکرد: {ad['km']} km\n"
-            f"رنگ: {ad['color']} | تصادف: {ad['accident']} | سند: {ad['document']}\n"
-            f"بیمه: {ad['insurance']} ماه\n"
             f"قیمت: {ad['price']} ریال\n"
             f"تماس: {ad['phone']}"
         )
 
-        if ad["owner_id"] == uid:
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🗑 حذف آگهی من", callback_data=f"mydelete_{ad_id}")]
-            ])
-        else:
-            kb = None
-
         await update.message.reply_photo(
             photo=ad["photos"][0],
-            caption=caption,
-            reply_markup=kb
+            caption=caption
         )
-
-# -------------------- لیست آگهی‌های در انتظار تأیید -------------------- #
 
 async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -169,7 +164,7 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not pending_ads:
-        await update.message.reply_text("هیچ آگهی در انتظار تأیید وجود ندارد.")
+        await update.message.reply_text("هیچ آگهی در انتظار تایید نیست.")
         return
 
     for ad_id, ad in pending_ads.items():
@@ -178,15 +173,13 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{ad['province']} - {ad['city']}\n"
             f"{ad['motor_type']} | {ad['model']}\n"
             f"سال: {ad['year']} | کارکرد: {ad['km']} km\n"
-            f"رنگ: {ad['color']} | تصادف: {ad['accident']} | سند: {ad['document']}\n"
-            f"بیمه: {ad['insurance']} ماه\n"
             f"قیمت: {ad['price']} ریال\n"
             f"تماس: {ad['phone']}"
         )
 
         buttons = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✔ تأیید", callback_data=f"approve_{ad_id}"),
+                InlineKeyboardButton("✔ تایید", callback_data=f"approve_{ad_id}"),
                 InlineKeyboardButton("❌ حذف", callback_data=f"delete_{ad_id}")
             ]
         ])
@@ -197,33 +190,39 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=buttons
         )
 
+async def list_sold(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not sold_ads:
+        await update.message.reply_text("هیچ موتوری فروخته نشده.")
+        return
+
+    for ad_id, ad in sold_ads.items():
+        await update.message.reply_text(f"فروخته شده: #{ad_id} - {ad['model']}")
+
+async def list_deleted(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not deleted_ads:
+        await update.message.reply_text("هیچ آگهی حذف نشده.")
+        return
+
+    for ad_id, ad in deleted_ads.items():
+        await update.message.reply_text(f"حذف شده: #{ad_id} - {ad['model']}")
+
 # -------------------- عکس -------------------- #
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    msg = update.message
 
     if uid in user_state and user_state[uid] == "photos":
-        temp_data[uid]["photos"].append(msg.photo[-1].file_id)
-        await msg.reply_text("عکس اضافه شد. اگر تمام شد بنویس: تمام")
+        temp_data[uid]["photos"].append(update.message.photo[-1].file_id)
+        await update.message.reply_text("عکس اضافه شد. اگر تمام شد بنویس: تمام")
         return
 
-    if uid in user_state and user_state[uid].startswith("payment_"):
-        ad_id = int(user_state[uid].split("_")[1])
-        await msg.reply_text("رسید دریافت شد. آگهی برای مدیر ارسال شد.")
-        await send_to_admin(context, ad_id, pending_ads[ad_id])
-        del user_state[uid]
-        del temp_data[uid]
-        return
-
-    await msg.reply_text("❌ عکس فقط در مرحله ثبت آگهی یا ارسال رسید مجاز است.")
+    await update.message.reply_text("❌ عکس فقط در مرحله ثبت آگهی مجاز است.")
 
 # -------------------- متن -------------------- #
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    msg = update.message
-    text = msg.text.strip()
+    text = update.message.text.strip()
 
     if uid in user_state:
         st = user_state[uid]
@@ -231,79 +230,73 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if st == "province":
             temp_data[uid]["province"] = text
             user_state[uid] = "city"
-            await msg.reply_text("شهر موتور را بنویس:")
+            await update.message.reply_text("شهر موتور را بنویس:")
             return
 
         if st == "city":
             temp_data[uid]["city"] = text
             user_state[uid] = "motor_type"
-            await msg.reply_text("نوع موتور را بنویس:")
+            await update.message.reply_text("نوع موتور را بنویس:")
             return
 
         if st == "motor_type":
             temp_data[uid]["motor_type"] = text
             user_state[uid] = "model"
-            await msg.reply_text("مدل موتور را بنویس:")
+            await update.message.reply_text("مدل موتور را بنویس:")
             return
 
         if st == "model":
             temp_data[uid]["model"] = text
             user_state[uid] = "year"
-            await msg.reply_text("سال ساخت را بنویس:")
+            await update.message.reply_text("سال ساخت را بنویس:")
             return
 
         if st == "year":
             temp_data[uid]["year"] = int(text) if text.isdigit() else 0
             user_state[uid] = "km"
-            await msg.reply_text("کارکرد را بنویس:")
+            await update.message.reply_text("کارکرد را بنویس:")
             return
 
         if st == "km":
             temp_data[uid]["km"] = int(text) if text.isdigit() else 0
             user_state[uid] = "color"
-            await msg.reply_text("رنگ موتور را بنویس:")
+            await update.message.reply_text("رنگ موتور را بنویس:")
             return
 
         if st == "color":
             temp_data[uid]["color"] = text
             user_state[uid] = "accident"
-            await msg.reply_text("وضعیت تصادف را بنویس:")
+            await update.message.reply_text("وضعیت تصادف را بنویس:")
             return
 
         if st == "accident":
             temp_data[uid]["accident"] = text
             user_state[uid] = "document"
-            await msg.reply_text("وضعیت سند را بنویس:")
+            await update.message.reply_text("وضعیت سند را بنویس:")
             return
 
         if st == "document":
             temp_data[uid]["document"] = text
             user_state[uid] = "insurance"
-            await msg.reply_text("بیمه را بنویس:")
+            await update.message.reply_text("بیمه را بنویس:")
             return
 
         if st == "insurance":
             temp_data[uid]["insurance"] = int(text) if text.isdigit() else 0
             user_state[uid] = "price"
-            await msg.reply_text("قیمت را بنویس (عدد):")
+            await update.message.reply_text("قیمت را بنویس:")
             return
 
         if st == "price":
-            if not is_valid_price(text):
-                await msg.reply_text("❌ قیمت باید عدد باشد.")
-                return
             temp_data[uid]["price"] = text
             user_state[uid] = "phone"
-            await msg.reply_text("شماره تماس را بنویس:")
+            await update.message.reply_text("شماره تماس را بنویس:")
             return
 
         if st == "phone":
-            if not is_valid_phone(text):
-                await msg.reply_text("❌ شماره تماس باید 11 رقم باشد.")
-                return
             temp_data[uid]["phone"] = text
             user_state[uid] = "photos"
-            await msg.reply_text("عکس‌های موتور را بفرست. اگر تمام شد بنویس: تمام")
+            await update.message.reply_text("عکس‌های موتور را بفرست. اگر تمام شد بنویس: تمام")
             return
 
         if st == "photos":
@@ -318,12 +311,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 }
 
                 buttons = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📤 ثبت برای خریداران", callback_data=f"user_publish_{ad_id}")],
-                    [InlineKeyboardButton("🗑 حذف آگهی", callback_data=f"user_delete_{ad_id}")]
+                    [InlineKeyboardButton("📤 ارسال به مدیر (پس از پرداخت)", callback_data=f"payfirst_{ad_id}")]
                 ])
 
-                await msg.reply_text(
-                    f"آگهی #{ad_id} آماده است.\nبرای ثبت در لیست خریداران روی دکمه بزن.",
+                await update.message.reply_text(
+                    f"برای ثبت آگهی #{ad_id} مبلغ ۷۰۰۰۰۰۰ ریال را به کارت زیر واریز کنید:\n{CARD_NUMBER}\n\nپس از پرداخت، دکمهٔ ارسال فعال می‌شود.",
                     reply_markup=buttons
                 )
 
@@ -331,19 +323,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             else:
-                await msg.reply_text("اگر عکس دیگری نداری بنویس: تمام")
+                await update.message.reply_text("اگر عکس دیگری نداری بنویس: تمام")
                 return
 
+    # دستورات اصلی
     if text == "ثبت آگهی موتور":
         await new_ad(update, context)
     elif text == "لیست آگهی‌ها":
         await list_ads(update, context)
-    elif text == "آگهی‌های در انتظار تأیید":
+    elif text == "لیست فروش":
+        await list_sold(update, context)
+    elif text == "لیست انتظار":
         await list_pending(update, context)
+    elif text == "لیست حذف‌شده‌ها":
+        await list_deleted(update, context)
     elif text == "تماس با پشتیبانی":
         await support(update, context)
     else:
-        await msg.reply_text("دستور نامعتبر است.")
+        await update.message.reply_text("دستور نامعتبر است.")
 
 # -------------------- دکمه‌ها -------------------- #
 
@@ -352,38 +349,26 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    if data.startswith("user_publish_"):
-        ad_id = int(data.split("_")[2])
-        await query.edit_message_text("آگهی برای مدیر ارسال شد. منتظر تأیید باشید.")
-        await send_to_admin(context, ad_id, pending_ads[ad_id])
-        return
-
-    if data.startswith("user_delete_"):
-        ad_id = int(data.split("_")[2])
-        if ad_id in pending_ads:
-            del pending_ads[ad_id]
-        await query.edit_message_text("آگهی حذف شد.")
+    if data.startswith("payfirst_"):
+        ad_id = int(data.split("_")[1])
+        await query.edit_message_text(
+            "پس از پرداخت، رسید را برای مدیر ارسال کنید.\n"
+            "مدیر پس از تایید پرداخت، آگهی را ثبت می‌کند."
+        )
         return
 
     if data.startswith("approve_"):
         ad_id = int(data.split("_")[1])
         ads[ad_id] = pending_ads[ad_id]
         del pending_ads[ad_id]
-        await query.edit_message_text(f"آگهی #{ad_id} ✔ تأیید شد.")
+        await query.edit_message_text(f"آگهی #{ad_id} تایید شد.")
         return
 
     if data.startswith("delete_"):
         ad_id = int(data.split("_")[1])
-        if ad_id in pending_ads:
-            del pending_ads[ad_id]
-        await query.edit_message_text(f"آگهی #{ad_id} ❌ حذف شد.")
-        return
-
-    if data.startswith("mydelete_"):
-        ad_id = int(data.split("_")[1])
-        if ad_id in ads:
-            del ads[ad_id]
-        await query.edit_message_text("آگهی شما حذف شد.")
+        deleted_ads[ad_id] = pending_ads[ad_id]
+        del pending_ads[ad_id]
+        await query.edit_message_text(f"آگهی #{ad_id} حذف شد.")
         return
 
 # -------------------- اجرا -------------------- #
