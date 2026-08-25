@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # -------------------- داده‌ها -------------------- #
 
 ads: Dict[int, Dict[str, Any]] = {}          # آگهی‌های تایید شده
-pending_ads: Dict[int, Dict[str, Any]] = {}  # آگهی‌های در انتظار تایید
+pending_ads: Dict[int, Dict[str, Any]] = {}  # آگهی‌های در انتظار تأیید
 user_state: Dict[int, str] = {}              # وضعیت مرحله هر کاربر
 temp_data: Dict[int, Dict[str, Any]] = {}    # دادهٔ موقت ثبت آگهی
 next_ad_id: int = 1                          # شماره آگهی بعدی
@@ -50,7 +50,6 @@ MOTOR_TYPES: List[str] = [
     "سفری",
     "شهری",
 ]
-
 
 # -------------------- منوها -------------------- #
 
@@ -71,11 +70,18 @@ def admin_menu() -> ReplyKeyboardMarkup:
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
-
 # -------------------- اعتبارسنجی -------------------- #
 
 def is_valid_text(t: str, min_len: int = 3) -> bool:
-    return bool(re.match(r"[A-Za-zآ-ی\s]{%d,}" % min_len, t))
+    t = t.strip()
+    if len(t) < min_len:
+        return False
+    if not re.match(r"^[A-Za-zآ-ی0-9\s]+$", t):
+        return False
+    parts = t.split()
+    if len(parts) == 1 and len(parts[0]) < 3:
+        return False
+    return True
 
 
 def is_valid_price(t: str) -> bool:
@@ -99,8 +105,7 @@ def normalize_motor_type(t: str) -> str:
     for mt in MOTOR_TYPES:
         if mt in t:
             return mt
-    return t  # اگر مدل خاص نوشت، همان را نگه می‌داریم
-
+    return t
 
 # -------------------- شروع -------------------- #
 
@@ -116,7 +121,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "سلام موتوریاز عزیز🔥\nبه بزرگترین ربات خرید و فروش موتور خوش آمدی!",
             reply_markup=user_menu(),
         )
-
 
 # -------------------- تماس با پشتیبانی -------------------- #
 
@@ -137,14 +141,12 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     await update.message.reply_text(text, reply_markup=user_menu())
 
-
 # -------------------- دستور /id -------------------- #
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         f"ایدی عددی شما: {update.effective_user.id}"
     )
-
 
 # -------------------- ارسال آگهی برای مدیر -------------------- #
 
@@ -186,7 +188,6 @@ async def send_ad_to_admin(
         reply_markup=buttons,
     )
 
-
 # -------------------- ثبت آگهی -------------------- #
 
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -194,7 +195,6 @@ async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_state[uid] = "province"
     temp_data[uid] = {"photos": []}
     await update.message.reply_text("استان موتور:")
-
 
 # -------------------- لیست آگهی‌های تایید شده -------------------- #
 
@@ -224,7 +224,6 @@ async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         text,
         reply_markup=admin_menu() if uid == OWNER_ID else user_menu(),
     )
-
 
 # -------------------- لیست آگهی‌های در انتظار تأیید -------------------- #
 
@@ -262,46 +261,34 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         reply_markup=admin_menu(),
     )
 
-
 # -------------------- جستجو پیشرفته -------------------- #
 
 def match_filters(ad: Dict[str, Any], f: Dict[str, Any]) -> bool:
-    # استان
     if f.get("province") and f["province"] not in ad["province"]:
         return False
-    # شهر
     if f.get("city") and f["city"] not in ad["city"]:
         return False
-    # نوع موتور
     if f.get("motor_type") and f["motor_type"] not in ad["motor_type"]:
         return False
-    # مدل
     if f.get("model") and f["model"] not in ad["model"]:
         return False
-    # سال حداقل/حداکثر
     if f.get("year_min") and ad["year"] < f["year_min"]:
         return False
     if f.get("year_max") and ad["year"] > f["year_max"]:
         return False
-    # قیمت حداقل/حداکثر
     price_int = int(ad["price"])
     if f.get("price_min") and price_int < f["price_min"]:
         return False
     if f.get("price_max") and price_int > f["price_max"]:
         return False
-    # رنگ
     if f.get("color") and f["color"] not in ad["color"]:
         return False
-    # تصادف
     if f.get("accident") and f["accident"] != ad["accident"]:
         return False
-    # سند
     if f.get("document") and f["document"] != ad["document"]:
         return False
-    # بیمه حداقل
     if f.get("insurance_min") and ad["insurance"] < f["insurance_min"]:
         return False
-
     return True
 
 
@@ -435,7 +422,6 @@ async def search_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await update.message.reply_text("فقط عدد یا رد:")
                 return
 
-        # حالا جستجو را انجام می‌دهیم
         result = ""
         for ad_id, ad in ads.items():
             if match_filters(ad, f):
@@ -465,8 +451,7 @@ async def search_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         del temp_data[uid]
         return
 
-
-# -------------------- دستیار هوشمند (تحلیل متن) -------------------- #
+# -------------------- دستیار هوشمند -------------------- #
 
 def extract_info(text: str) -> Dict[str, Any]:
     info: Dict[str, Any] = {}
@@ -573,8 +558,7 @@ async def assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         del user_state[uid]
         return
 
-
-# -------------------- هندل پیام‌ها -------------------- #
+# -------------------- هندل عکس -------------------- #
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
@@ -589,27 +573,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     else:
         await msg.reply_text("❌ عکس فقط در مرحله ثبت آگهی موتور مجاز است.")
 
+# -------------------- هندل متن -------------------- #
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     msg = update.message
     text = msg.text.strip()
 
-    # جستجو پیشرفته
     if text == "جستجو پیشرفته" or (
         uid in user_state and user_state[uid].startswith("search_filters")
     ):
         await search_advanced(update, context)
         return
 
-    # دستیار هوشمند
     if text == "دستیار هوشمند" or (
         uid in user_state and user_state[uid] == "assistant"
     ):
         await assistant(update, context)
         return
 
-    # مراحل ثبت آگهی
     if uid in user_state:
         st = user_state[uid]
 
@@ -640,8 +622,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
         if st == "model":
-            if not is_valid_text(text):
-                await msg.reply_text("❌ مدل نامعتبر است.")
+            if not is_valid_text(text, min_len=4):
+                await msg.reply_text(
+                    "❌ مدل نامعتبر است.\nمثال: «هوندا کلیک 150» یا «آپاچی 180»."
+                )
                 return
             temp_data[uid]["model"] = text
             user_state[uid] = "year"
@@ -672,14 +656,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 return
             temp_data[uid]["color"] = text
             user_state[uid] = "accident"
-            await msg.reply_text("وضعیت تصادف (بی‌تصادف / تصادفی):")
+            kb = ReplyKeyboardMarkup(
+                [["بی‌تصادف", "تصادفی"]],
+                resize_keyboard=True
+            )
+            await msg.reply_text("وضعیت تصادف را انتخاب کن:", reply_markup=kb)
             return
 
         if st == "accident":
-            if text not in ["بی‌تصادف", "تصادفی"]:
-                await msg.reply_text("❌ فقط بی‌تصادف یا تصادفی.")
+            t = text.replace(" ", "")
+            if any(x in t for x in ["بیتصادف", "بدونتصادف", "بی‌تصادف"]):
+                temp_data[uid]["accident"] = "بی‌تصادف"
+            elif "تصادف" in t:
+                temp_data[uid]["accident"] = "تصادفی"
+            else:
+                await msg.reply_text(
+                    "❌ وضعیت تصادف نامشخص است.\nبنویس: «بی‌تصادف» یا «بدون تصادف» یا «تصادفی»."
+                )
                 return
-            temp_data[uid]["accident"] = text
             user_state[uid] = "document"
             await msg.reply_text("وضعیت سند (تک‌برگ / دارای سند):")
             return
@@ -778,7 +772,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await msg.reply_text("❌ لطفاً عکس رسید واریز را ارسال کن.")
                 return
 
-    # دستورات منو
     if text == "ثبت آگهی موتور":
         await new_ad(update, context)
     elif text == "لیست آگهی‌ها":
@@ -796,7 +789,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             "دستور نامعتبر است.",
             reply_markup=admin_menu() if uid == OWNER_ID else user_menu(),
         )
-
 
 # -------------------- دکمه‌های تایید و حذف -------------------- #
 
@@ -828,7 +820,6 @@ async def callback_handler(
             )
         else:
             await query.edit_message_text("آگهی یافت نشد یا قبلاً حذف شده است.")
-
 
 # -------------------- اجرا -------------------- #
 
