@@ -30,12 +30,12 @@ logger = logging.getLogger(__name__)
 
 # -------------------- دیتابیس ساده -------------------- #
 
-ads = {}             # آگهی‌های تایید شده
-pending_ads = {}     # آگهی‌های در انتظار پرداخت/تایید
-sold_ads = {}        # آگهی‌های فروخته شده
-user_state = {}      # مرحلهٔ کاربر
-temp_data = {}       # دادهٔ موقت ثبت آگهی
-next_ad_id = 1       # شماره آگهی
+ads: Dict[int, Dict[str, Any]] = {}         # آگهی‌های تایید شده
+pending_ads: Dict[int, Dict[str, Any]] = {} # آگهی‌های در انتظار پرداخت/تایید
+sold_ads: Dict[int, Dict[str, Any]] = {}    # آگهی‌های فروخته شده
+user_state: Dict[int, str] = {}             # مرحلهٔ کاربر
+temp_data: Dict[int, Dict[str, Any]] = {}   # دادهٔ موقت ثبت آگهی
+next_ad_id: int = 1                         # شماره آگهی
 
 # -------------------- منو مشتری -------------------- #
 
@@ -54,13 +54,18 @@ def user_menu():
 def admin_menu():
     return ReplyKeyboardMarkup(
         [
-            ["ثبت آگهی موتور"],
+            ["ثبت آگهی‌ها"],
             ["لیست آگهی‌ها"],
             ["لیست انتظار"],
             ["لیست فروش"],
         ],
         resize_keyboard=True
     )
+
+# -------------------- /id -------------------- #
+
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"ایدی عددی شما: {update.effective_user.id}")
 
 # -------------------- شروع -------------------- #
 
@@ -98,7 +103,7 @@ async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # -------------------- ارسال آگهی برای مدیر -------------------- #
 
-async def send_to_admin(context, ad_id, ad):
+async def send_to_admin(context: ContextTypes.DEFAULT_TYPE, ad_id: int, ad: Dict[str, Any]):
     caption = (
         f"🔔 آگهی جدید #{ad_id}\n"
         f"{ad['province']} - {ad['city']}\n"
