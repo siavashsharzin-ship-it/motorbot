@@ -1,13 +1,13 @@
 import logging
 import os
-import re
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    InputMediaPhoto,
 )
 from telegram.ext import (
     ApplicationBuilder,
@@ -40,17 +40,6 @@ user_state: Dict[int, str] = {}              # وضعیت مرحله هر کار
 temp_data: Dict[int, Dict[str, Any]] = {}    # دادهٔ موقت ثبت آگهی
 next_ad_id: int = 1                          # شماره آگهی بعدی
 
-MOTOR_TYPES: List[str] = [
-    "اسکوتر",
-    "اسپرت",
-    "تریل",
-    "کراس",
-    "کلاسیک",
-    "بایک",
-    "سفری",
-    "شهری",
-]
-
 # -------------------- منوها -------------------- #
 
 def user_menu() -> ReplyKeyboardMarkup:
@@ -70,19 +59,7 @@ def admin_menu() -> ReplyKeyboardMarkup:
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
-# -------------------- اعتبارسنجی -------------------- #
-
-def is_valid_text(t: str, min_len: int = 3) -> bool:
-    t = t.strip()
-    if len(t) < min_len:
-        return False
-    if not re.match(r"^[A-Za-zآ-ی0-9\s]+$", t):
-        return False
-    parts = t.split()
-    if len(parts) == 1 and len(parts[0]) < 3:
-        return False
-    return True
-
+# -------------------- اعتبارسنجی‌های ساده -------------------- #
 
 def is_valid_price(t: str) -> bool:
     return t.isdigit() and int(t) > 0
@@ -90,22 +67,6 @@ def is_valid_price(t: str) -> bool:
 
 def is_valid_phone(t: str) -> bool:
     return t.isdigit() and len(t) == 11
-
-
-def is_valid_year(t: str) -> bool:
-    return t.isdigit() and 1300 <= int(t) <= 1500
-
-
-def is_valid_km(t: str) -> bool:
-    return t.isdigit() and int(t) >= 0
-
-
-def normalize_motor_type(t: str) -> str:
-    t = t.strip()
-    for mt in MOTOR_TYPES:
-        if mt in t:
-            return mt
-    return t
 
 # -------------------- شروع -------------------- #
 
@@ -159,7 +120,7 @@ async def send_ad_to_admin(
         f"🔔 آگهی جدید:\n"
         f"#{ad_id}\n"
         f"{ad['province']} - {ad['city']}\n"
-        f"{ad['model']} ({ad['motor_type']})\n"
+        f"{ad['motor_type']} | {ad['model']}\n"
         f"سال: {ad['year']} | کارکرد: {ad['km']} km\n"
         f"رنگ: {ad['color']} | تصادف: {ad['accident']} | سند: {ad['document']}\n"
         f"بیمه: {ad['insurance']} ماه\n"
@@ -181,12 +142,25 @@ async def send_ad_to_admin(
         ]
     )
 
-    await context.bot.send_photo(
-        chat_id=OWNER_ID,
-        photo=ad["photos"][0],
-        caption=caption,
-        reply_markup=buttons,
-    )
+    if ad["photos"]:
+        await context.bot.send_media_group(
+            chat_id=OWNER_ID,
+            media=[
+                InputMediaPhoto(media=pid)
+                for pid in ad["photos"]
+            ],
+        )
+        await context.bot.send_message(
+            chat_id=OWNER_ID,
+            text=caption,
+            reply_markup=buttons,
+        )
+    else:
+        await context.bot.send_message(
+            chat_id=OWNER_ID,
+            text=caption,
+            reply_markup=buttons,
+        )
 
 # -------------------- ثبت آگهی -------------------- #
 
@@ -194,7 +168,7 @@ async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     user_state[uid] = "province"
     temp_data[uid] = {"photos": []}
-    await update.message.reply_text("استان موتور:")
+    await update.message.reply_text("استان موتور را بنویس:")
 
 # -------------------- لیست آگهی‌های تایید شده -------------------- #
 
@@ -212,7 +186,7 @@ async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         text += (
             f"#{ad_id}\n"
             f"{ad['province']} - {ad['city']}\n"
-            f"{ad['model']} ({ad['motor_type']})\n"
+            f"{ad['motor_type']} | {ad['model']}\n"
             f"سال: {ad['year']} | کارکرد: {ad['km']} km\n"
             f"رنگ: {ad['color']} | تصادف: {ad['accident']} | سند: {ad['document']}\n"
             f"بیمه: {ad['insurance']} ماه\n"
@@ -248,7 +222,7 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         text += (
             f"#{ad_id}\n"
             f"{ad['province']} - {ad['city']}\n"
-            f"{ad['model']} ({ad['motor_type']})\n"
+            f"{ad['motor_type']} | {ad['model']}\n"
             f"سال: {ad['year']} | کارکرد: {ad['km']} km\n"
             f"رنگ: {ad['color']} | تصادف: {ad['accident']} | سند: {ad['document']}\n"
             f"بیمه: {ad['insurance']} ماه\n"
@@ -261,7 +235,7 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         reply_markup=admin_menu(),
     )
 
-# -------------------- جستجو پیشرفته -------------------- #
+# -------------------- جستجو پیشرفته (حرفه‌ای) -------------------- #
 
 def match_filters(ad: Dict[str, Any], f: Dict[str, Any]) -> bool:
     if f.get("province") and f["province"] not in ad["province"]:
@@ -281,11 +255,15 @@ def match_filters(ad: Dict[str, Any], f: Dict[str, Any]) -> bool:
         return False
     if f.get("price_max") and price_int > f["price_max"]:
         return False
+    if f.get("km_min") and ad["km"] < f["km_min"]:
+        return False
+    if f.get("km_max") and ad["km"] > f["km_max"]:
+        return False
     if f.get("color") and f["color"] not in ad["color"]:
         return False
-    if f.get("accident") and f["accident"] != ad["accident"]:
+    if f.get("accident") and f["accident"] not in ad["accident"]:
         return False
-    if f.get("document") and f["document"] != ad["document"]:
+    if f.get("document") and f["document"] not in ad["document"]:
         return False
     if f.get("insurance_min") and ad["insurance"] < f["insurance_min"]:
         return False
@@ -297,129 +275,144 @@ async def search_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     text = update.message.text.strip()
 
     if text == "جستجو پیشرفته":
-        user_state[uid] = "search_filters_province"
+        user_state[uid] = "search_province"
         temp_data[uid] = {"filters": {}}
         await update.message.reply_text(
-            "🔍 جستجو پیشرفته:\nاستان مورد نظر را بنویس (یا بنویس: رد):",
+            "🔍 جستجو پیشرفته:\nاستان مورد نظر را بنویس (یا خالی بگذار):",
             reply_markup=admin_menu() if uid == OWNER_ID else user_menu(),
         )
         return
 
-    if uid not in user_state or not user_state[uid].startswith("search_filters"):
+    if uid not in user_state or not user_state[uid].startswith("search_"):
         return
 
     st = user_state[uid]
     f = temp_data[uid]["filters"]
 
-    if st == "search_filters_province":
-        if text != "رد":
+    def empty_to_none(t: str) -> str | None:
+        return t if t else None
+
+    if st == "search_province":
+        if text:
             f["province"] = text
-        user_state[uid] = "search_filters_city"
-        await update.message.reply_text("شهر مورد نظر را بنویس (یا بنویس: رد):")
+        user_state[uid] = "search_city"
+        await update.message.reply_text("شهر مورد نظر را بنویس (یا خالی بگذار):")
         return
 
-    if st == "search_filters_city":
-        if text != "رد":
+    if st == "search_city":
+        if text:
             f["city"] = text
-        user_state[uid] = "search_filters_motor_type"
-        await update.message.reply_text(
-            "نوع موتور (اسکوتر، اسپرت، تریل، کراس، کلاسیک، بایک، سفری، شهری یا رد):"
-        )
+        user_state[uid] = "search_motor_type"
+        await update.message.reply_text("نوع موتور را بنویس (یا خالی بگذار):")
         return
 
-    if st == "search_filters_motor_type":
-        if text != "رد":
-            f["motor_type"] = normalize_motor_type(text)
-        user_state[uid] = "search_filters_model"
-        await update.message.reply_text("مدل موتور (یا بنویس: رد):")
+    if st == "search_motor_type":
+        if text:
+            f["motor_type"] = text
+        user_state[uid] = "search_model"
+        await update.message.reply_text("مدل موتور را بنویس (یا خالی بگذار):")
         return
 
-    if st == "search_filters_model":
-        if text != "رد":
+    if st == "search_model":
+        if text:
             f["model"] = text
-        user_state[uid] = "search_filters_year_min"
-        await update.message.reply_text("حداقل سال ساخت (مثلاً 1395 یا رد):")
+        user_state[uid] = "search_year_min"
+        await update.message.reply_text("حداقل سال ساخت (مثلاً 1395 یا خالی):")
         return
 
-    if st == "search_filters_year_min":
-        if text != "رد":
-            if is_valid_year(text):
+    if st == "search_year_min":
+        if text:
+            if text.isdigit():
                 f["year_min"] = int(text)
             else:
-                await update.message.reply_text("سال نامعتبر است، دوباره بنویس یا رد:")
+                await update.message.reply_text("سال باید عدد باشد یا خالی.")
                 return
-        user_state[uid] = "search_filters_year_max"
-        await update.message.reply_text("حداکثر سال ساخت (مثلاً 1403 یا رد):")
+        user_state[uid] = "search_year_max"
+        await update.message.reply_text("حداکثر سال ساخت (مثلاً 1403 یا خالی):")
         return
 
-    if st == "search_filters_year_max":
-        if text != "رد":
-            if is_valid_year(text):
+    if st == "search_year_max":
+        if text:
+            if text.isdigit():
                 f["year_max"] = int(text)
             else:
-                await update.message.reply_text("سال نامعتبر است، دوباره بنویس یا رد:")
+                await update.message.reply_text("سال باید عدد باشد یا خالی.")
                 return
-        user_state[uid] = "search_filters_price_min"
-        await update.message.reply_text("حداقل قیمت (به ریال، یا رد):")
+        user_state[uid] = "search_km_min"
+        await update.message.reply_text("حداقل کارکرد (km، عدد یا خالی):")
         return
 
-    if st == "search_filters_price_min":
-        if text != "رد":
+    if st == "search_km_min":
+        if text:
+            if text.isdigit():
+                f["km_min"] = int(text)
+            else:
+                await update.message.reply_text("کارکرد باید عدد باشد یا خالی.")
+                return
+        user_state[uid] = "search_km_max"
+        await update.message.reply_text("حداکثر کارکرد (km، عدد یا خالی):")
+        return
+
+    if st == "search_km_max":
+        if text:
+            if text.isdigit():
+                f["km_max"] = int(text)
+            else:
+                await update.message.reply_text("کارکرد باید عدد باشد یا خالی.")
+                return
+        user_state[uid] = "search_price_min"
+        await update.message.reply_text("حداقل قیمت (ریال، عدد یا خالی):")
+        return
+
+    if st == "search_price_min":
+        if text:
             if is_valid_price(text):
                 f["price_min"] = int(text)
             else:
-                await update.message.reply_text("قیمت نامعتبر است، دوباره بنویس یا رد:")
+                await update.message.reply_text("قیمت باید عدد مثبت باشد یا خالی.")
                 return
-        user_state[uid] = "search_filters_price_max"
-        await update.message.reply_text("حداکثر قیمت (به ریال، یا رد):")
+        user_state[uid] = "search_price_max"
+        await update.message.reply_text("حداکثر قیمت (ریال، عدد یا خالی):")
         return
 
-    if st == "search_filters_price_max":
-        if text != "رد":
+    if st == "search_price_max":
+        if text:
             if is_valid_price(text):
                 f["price_max"] = int(text)
             else:
-                await update.message.reply_text("قیمت نامعتبر است، دوباره بنویس یا رد:")
+                await update.message.reply_text("قیمت باید عدد مثبت باشد یا خالی.")
                 return
-        user_state[uid] = "search_filters_color"
-        await update.message.reply_text("رنگ (مثلاً مشکی، یا رد):")
+        user_state[uid] = "search_color"
+        await update.message.reply_text("رنگ (مثلاً مشکی، یا خالی):")
         return
 
-    if st == "search_filters_color":
-        if text != "رد":
+    if st == "search_color":
+        if text:
             f["color"] = text
-        user_state[uid] = "search_filters_accident"
-        await update.message.reply_text("وضعیت تصادف (بی‌تصادف / تصادفی / رد):")
+        user_state[uid] = "search_accident"
+        await update.message.reply_text("وضعیت تصادف (مثلاً بی‌تصادف، یا خالی):")
         return
 
-    if st == "search_filters_accident":
-        if text != "رد":
-            if text in ["بی‌تصادف", "تصادفی"]:
-                f["accident"] = text
-            else:
-                await update.message.reply_text("فقط بی‌تصادف یا تصادفی یا رد:")
-                return
-        user_state[uid] = "search_filters_document"
-        await update.message.reply_text("وضعیت سند (تک‌برگ / دارای سند / رد):")
+    if st == "search_accident":
+        if text:
+            f["accident"] = text
+        user_state[uid] = "search_document"
+        await update.message.reply_text("وضعیت سند (مثلاً تک‌برگ، یا خالی):")
         return
 
-    if st == "search_filters_document":
-        if text != "رد":
-            if text in ["تک‌برگ", "دارای سند"]:
-                f["document"] = text
-            else:
-                await update.message.reply_text("فقط تک‌برگ یا دارای سند یا رد:")
-                return
-        user_state[uid] = "search_filters_insurance_min"
-        await update.message.reply_text("حداقل بیمه (ماه، عدد یا رد):")
+    if st == "search_document":
+        if text:
+            f["document"] = text
+        user_state[uid] = "search_insurance_min"
+        await update.message.reply_text("حداقل بیمه (ماه، عدد یا خالی):")
         return
 
-    if st == "search_filters_insurance_min":
-        if text != "رد":
+    if st == "search_insurance_min":
+        if text:
             if text.isdigit():
                 f["insurance_min"] = int(text)
             else:
-                await update.message.reply_text("فقط عدد یا رد:")
+                await update.message.reply_text("بیمه باید عدد باشد یا خالی.")
                 return
 
         result = ""
@@ -428,7 +421,7 @@ async def search_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 result += (
                     f"#{ad_id}\n"
                     f"{ad['province']} - {ad['city']}\n"
-                    f"{ad['model']} ({ad['motor_type']})\n"
+                    f"{ad['motor_type']} | {ad['model']}\n"
                     f"سال: {ad['year']} | کارکرد: {ad['km']} km\n"
                     f"رنگ: {ad['color']} | تصادف: {ad['accident']} | سند: {ad['document']}\n"
                     f"بیمه: {ad['insurance']} ماه\n"
@@ -451,89 +444,7 @@ async def search_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         del temp_data[uid]
         return
 
-# -------------------- دستیار هوشمند -------------------- #
-
-def extract_info(text: str) -> Dict[str, Any]:
-    info: Dict[str, Any] = {}
-
-    m_color = re.search(r"رنگ\s*([آ-یA-Za-z0-9]+)", text)
-    if m_color:
-        info["color"] = m_color.group(1).strip()
-    else:
-        info["color"] = "نامشخص"
-
-    if "بدون تصادف" in text or "بی‌تصادف" in text:
-        info["accident"] = "بی‌تصادف"
-    elif "تصادف" in text:
-        info["accident"] = "تصادفی"
-    else:
-        info["accident"] = "نامشخص"
-
-    if "سند تک‌برگ" in text or "سند تک برگ" in text:
-        info["document"] = "تک‌برگ"
-    elif "سند" in text:
-        info["document"] = "دارای سند"
-    else:
-        info["document"] = "نامشخص"
-
-    m_ins = re.search(r"بیمه\s*([\d]+)\s*ماه", text)
-    if m_ins:
-        info["insurance"] = int(m_ins.group(1))
-    else:
-        info["insurance"] = None
-
-    m_price = re.search(r"قیمت\s*([\d]+)", text)
-    if m_price:
-        info["price"] = int(m_price.group(1))
-    else:
-        info["price"] = None
-
-    return info
-
-
-def expert_analysis(info: Dict[str, Any]) -> str:
-    accident = info.get("accident")
-    document = info.get("document")
-    insurance = info.get("insurance")
-    price = info.get("price")
-
-    lines: List[str] = []
-    lines.append("🔧 گزارش کارشناسی هوشمند موتور:\n")
-
-    if accident == "بی‌تصادف":
-        lines.append("✅ موتور بدون سابقه تصادف اعلام شده است.")
-    elif accident == "تصادفی":
-        lines.append("⚠ موتور دارای سابقه تصادف است، نیاز به بررسی دقیق شاسی و فریم دارد.")
-    else:
-        lines.append("ℹ وضعیت تصادف موتور در متن مشخص نشده است.")
-
-    if document == "تک‌برگ":
-        lines.append("✅ سند تک‌برگ، وضعیت حقوقی موتور را شفاف‌تر می‌کند.")
-    elif document == "دارای سند":
-        lines.append("✅ وجود سند نکته مثبت است، توصیه می‌شود تطبیق پلاک و شماره موتور انجام شود.")
-    else:
-        lines.append("ℹ وضعیت سند موتور در متن مشخص نشده است.")
-
-    if insurance is not None:
-        if insurance >= 6:
-            lines.append("✅ بیمه باقیمانده مناسب است و هزینه اولیه خریدار را کاهش می‌دهد.")
-        else:
-            lines.append("⚠ بیمه کم، هزینه اضافی برای خریدار ایجاد می‌کند.")
-    else:
-        lines.append("ℹ وضعیت بیمه در متن ذکر نشده است.")
-
-    lines.append("\n✅ جمع‌بندی کارشناسی:")
-    if price is not None and accident != "تصادفی":
-        lines.append(
-            "در صورت تایید سلامت فنی موتور (انجین، جلو‌بندی، سیستم ترمز) و عدم نشتی روغن، این قیمت می‌تواند قابل قبول باشد."
-        )
-    else:
-        lines.append(
-            "توصیه می‌شود پیش از خرید، بازدید حضوری و تست فنی کامل انجام شود."
-        )
-
-    return "\n".join(lines)
-
+# -------------------- دستیار هوشمند (ساده) -------------------- #
 
 async def assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
@@ -542,17 +453,14 @@ async def assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if text == "دستیار هوشمند":
         user_state[uid] = "assistant"
         await update.message.reply_text(
-            "متن توضیحات موتور را بفرست (رنگ، بیمه، سند، قیمت، تصادف و ...):",
+            "متن توضیحات موتور را بفرست (هرچه دوست داری بنویس):",
             reply_markup=admin_menu() if uid == OWNER_ID else user_menu(),
         )
         return
 
     if uid in user_state and user_state[uid] == "assistant":
-        info = extract_info(text)
-        result = expert_analysis(info)
-
         await update.message.reply_text(
-            result,
+            "✅ توضیحات دریافت شد.\nاین نسخه فقط ثبت آگهی و فیلتر حرفه‌ای دارد.",
             reply_markup=admin_menu() if uid == OWNER_ID else user_menu(),
         )
         del user_state[uid]
@@ -570,8 +478,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await msg.reply_text(
             "✅ عکس اضافه شد. اگر عکس دیگری داری، بفرست؛ اگر تمام شد، بنویس: تمام"
         )
+    elif uid in user_state and user_state[uid].startswith("payment_"):
+        ad_id = int(user_state[uid].split("_")[1])
+        await msg.reply_text(
+            "✅ رسید دریافت شد. آگهی برای مدیر ارسال شد.",
+            reply_markup=user_menu() if uid != OWNER_ID else admin_menu(),
+        )
+        await send_ad_to_admin(context, ad_id, pending_ads[ad_id])
+        del user_state[uid]
+        del temp_data[uid]
     else:
-        await msg.reply_text("❌ عکس فقط در مرحله ثبت آگهی موتور مجاز است.")
+        await msg.reply_text("❌ عکس فقط در مرحله ثبت آگهی موتور یا ارسال رسید مجاز است.")
 
 # -------------------- هندل متن -------------------- #
 
@@ -581,7 +498,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     text = msg.text.strip()
 
     if text == "جستجو پیشرفته" or (
-        uid in user_state and user_state[uid].startswith("search_filters")
+        uid in user_state and user_state[uid].startswith("search_")
     ):
         await search_advanced(update, context)
         return
@@ -596,104 +513,63 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         st = user_state[uid]
 
         if st == "province":
-            if not is_valid_text(text):
-                await msg.reply_text("❌ نام استان نامعتبر است.")
-                return
             temp_data[uid]["province"] = text
             user_state[uid] = "city"
-            await msg.reply_text("شهر:")
+            await msg.reply_text("شهر موتور را بنویس:")
             return
 
         if st == "city":
-            if not is_valid_text(text):
-                await msg.reply_text("❌ نام شهر نامعتبر است.")
-                return
             temp_data[uid]["city"] = text
             user_state[uid] = "motor_type"
-            await msg.reply_text(
-                "نوع موتور (اسکوتر، اسپرت، تریل، کراس، کلاسیک، بایک، سفری، شهری یا مدل خاص):"
-            )
+            await msg.reply_text("نوع موتور را بنویس (مثلاً اسکوتر، آپاچی، هوندا و ...):")
             return
 
         if st == "motor_type":
-            temp_data[uid]["motor_type"] = normalize_motor_type(text)
+            temp_data[uid]["motor_type"] = text
             user_state[uid] = "model"
-            await msg.reply_text("مدل موتور:")
+            await msg.reply_text("مدل موتور را بنویس:")
             return
 
         if st == "model":
-            if not is_valid_text(text, min_len=4):
-                await msg.reply_text(
-                    "❌ مدل نامعتبر است.\nمثال: «هوندا کلیک 150» یا «آپاچی 180»."
-                )
-                return
             temp_data[uid]["model"] = text
             user_state[uid] = "year"
-            await msg.reply_text("سال ساخت (مثلاً 1398):")
+            await msg.reply_text("سال ساخت را بنویس (مثلاً 1398):")
             return
 
         if st == "year":
-            if not is_valid_year(text):
-                await msg.reply_text("❌ سال ساخت نامعتبر است.")
-                return
-            temp_data[uid]["year"] = int(text)
+            temp_data[uid]["year"] = text if text else "نامشخص"
             user_state[uid] = "km"
-            await msg.reply_text("کارکرد (به کیلومتر، فقط عدد):")
+            await msg.reply_text("کارکرد را بنویس (به کیلومتر، مثلاً 25000):")
             return
 
         if st == "km":
-            if not is_valid_km(text):
-                await msg.reply_text("❌ کارکرد نامعتبر است.")
-                return
-            temp_data[uid]["km"] = int(text)
+            temp_data[uid]["km"] = int(text) if text.isdigit() else 0
             user_state[uid] = "color"
-            await msg.reply_text("رنگ موتور:")
+            await msg.reply_text("رنگ موتور را بنویس:")
             return
 
         if st == "color":
-            if not is_valid_text(text, min_len=2):
-                await msg.reply_text("❌ رنگ نامعتبر است.")
-                return
             temp_data[uid]["color"] = text
             user_state[uid] = "accident"
-            kb = ReplyKeyboardMarkup(
-                [["بی‌تصادف", "تصادفی"]],
-                resize_keyboard=True
-            )
-            await msg.reply_text("وضعیت تصادف را انتخاب کن:", reply_markup=kb)
+            await msg.reply_text("وضعیت تصادف را بنویس (مثلاً بی‌تصادف، تصادفی و ...):")
             return
 
         if st == "accident":
-            t = text.replace(" ", "")
-            if any(x in t for x in ["بیتصادف", "بدونتصادف", "بی‌تصادف"]):
-                temp_data[uid]["accident"] = "بی‌تصادف"
-            elif "تصادف" in t:
-                temp_data[uid]["accident"] = "تصادفی"
-            else:
-                await msg.reply_text(
-                    "❌ وضعیت تصادف نامشخص است.\nبنویس: «بی‌تصادف» یا «بدون تصادف» یا «تصادفی»."
-                )
-                return
+            temp_data[uid]["accident"] = text
             user_state[uid] = "document"
-            await msg.reply_text("وضعیت سند (تک‌برگ / دارای سند):")
+            await msg.reply_text("وضعیت سند را بنویس (مثلاً تک‌برگ، قولنامه و ...):")
             return
 
         if st == "document":
-            if text not in ["تک‌برگ", "دارای سند"]:
-                await msg.reply_text("❌ فقط تک‌برگ یا دارای سند.")
-                return
             temp_data[uid]["document"] = text
             user_state[uid] = "insurance"
-            await msg.reply_text("بیمه (ماه، فقط عدد):")
+            await msg.reply_text("بیمه را بنویس (مثلاً 12 ماه، یا بدون بیمه):")
             return
 
         if st == "insurance":
-            if not text.isdigit():
-                await msg.reply_text("❌ بیمه باید عدد باشد.")
-                return
-            temp_data[uid]["insurance"] = int(text)
+            temp_data[uid]["insurance"] = int(text) if text.isdigit() else 0
             user_state[uid] = "price"
-            await msg.reply_text("قیمت (به ریال، فقط عدد):")
+            await msg.reply_text("قیمت را بنویس (به ریال، فقط عدد):")
             return
 
         if st == "price":
@@ -702,7 +578,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 return
             temp_data[uid]["price"] = text
             user_state[uid] = "phone"
-            await msg.reply_text("شماره تماس (11 رقم):")
+            await msg.reply_text("شماره تماس را بنویس (11 رقم):")
             return
 
         if st == "phone":
@@ -731,7 +607,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     "city": temp_data[uid]["city"],
                     "motor_type": temp_data[uid]["motor_type"],
                     "model": temp_data[uid]["model"],
-                    "year": temp_data[uid]["year"],
+                    "year": int(temp_data[uid]["year"]) if str(temp_data[uid]["year"]).isdigit() else 0,
                     "km": temp_data[uid]["km"],
                     "color": temp_data[uid]["color"],
                     "accident": temp_data[uid]["accident"],
@@ -740,6 +616,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     "price": temp_data[uid]["price"],
                     "phone": temp_data[uid]["phone"],
                     "photos": temp_data[uid]["photos"],
+                    "owner_id": uid,
                 }
 
                 await msg.reply_text(
@@ -756,21 +633,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 return
 
         if st.startswith("payment_"):
-            ad_id = int(st.split("_")[1])
-            if msg.photo:
-                await msg.reply_text(
-                    "✅ رسید دریافت شد. آگهی برای مدیر ارسال شد.",
-                    reply_markup=user_menu()
-                    if uid != OWNER_ID
-                    else admin_menu(),
-                )
-                await send_ad_to_admin(context, ad_id, pending_ads[ad_id])
-                del user_state[uid]
-                del temp_data[uid]
-                return
-            else:
-                await msg.reply_text("❌ لطفاً عکس رسید واریز را ارسال کن.")
-                return
+            await msg.reply_text("❌ لطفاً عکس رسید واریز را ارسال کن.")
+            return
 
     if text == "ثبت آگهی موتور":
         await new_ad(update, context)
@@ -805,8 +669,8 @@ async def callback_handler(
         if ad_id in pending_ads:
             ads[ad_id] = pending_ads[ad_id]
             del pending_ads[ad_id]
-            await query.edit_message_caption(
-                caption=f"آگهی #{ad_id} ✔ تأیید شد.",
+            await query.edit_message_text(
+                text=f"آگهی #{ad_id} ✔ تأیید شد.",
             )
         else:
             await query.edit_message_text("آگهی یافت نشد یا قبلاً رسیدگی شده است.")
@@ -815,8 +679,8 @@ async def callback_handler(
         ad_id = int(data.split("_")[1])
         if ad_id in pending_ads:
             del pending_ads[ad_id]
-            await query.edit_message_caption(
-                caption=f"آگهی #{ad_id} ❌ حذف شد.",
+            await query.edit_message_text(
+                text=f"آگهی #{ad_id} ❌ حذف شد.",
             )
         else:
             await query.edit_message_text("آگهی یافت نشد یا قبلاً حذف شده است.")
