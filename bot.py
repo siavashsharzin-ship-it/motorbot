@@ -273,7 +273,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if st == "model":
             temp_data[uid]["model"] = text
             user_state[uid] = "year"
-            await msg.reply_text("سال ساخت را بنویس (مثلاً ۱۳۹۸):")
+            await msg.reply_text("سال ساخت را بنویس:")
             return
 
         if st == "year":
@@ -283,7 +283,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             temp_data[uid]["year"] = year
             user_state[uid] = "km"
-            await msg.reply_text("کارکرد را بنویس (کیلومتر):")
+            await msg.reply_text("کارکرد را بنویس:")
             return
 
         if st == "km":
@@ -293,7 +293,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             temp_data[uid]["km"] = km
             user_state[uid] = "price"
-            await msg.reply_text("قیمت را بنویس (ریال):")
+            await msg.reply_text("قیمت را بنویس:")
             return
 
         if st == "price":
@@ -318,7 +318,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ad_id = next_ad_id
                 next_ad_id += 1
 
-                # اگر مدیر است، مجانی و مستقیم تایید شده
+                # مدیر → مجانی و مستقیم تایید شده
                 if uid == OWNER_ID:
                     ads[ad_id] = {
                         **temp_data[uid],
@@ -330,7 +330,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     del user_state[uid]
                     return
 
-                # مشتری: نیاز به پرداخت
+                # مشتری → نیاز به پرداخت
                 pending_ads[ad_id] = {
                     **temp_data[uid],
                     "owner_id": uid,
