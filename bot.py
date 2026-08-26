@@ -4,16 +4,21 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ========== تنظیمات ==========
+# ========== تنظیمات با نام متغیرهای شما ==========
 TOKEN = os.environ.get("TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
 CARD_NUMBER = os.environ.get("CARD_NUMBER", "شماره کارت ثبت نشده")
+SUPPORT_ID = os.environ.get("SUPPORT_ID", "Admin")
 
 if not TOKEN:
-    print("❌ خطا: TOKEN تنظیم نشده!")
+    print("❌ خطا: متغیر TOKEN تنظیم نشده!")
     exit(1)
 
+if ADMIN_ID == 0:
+    print("⚠️ هشدار: ADMIN_ID تنظیم نشده!")
+
 print("✅ ربات در حال راه‌اندازی...")
+print(f"👤 ادمین: {ADMIN_ID}")
 
 # ========== دیتابیس ==========
 DB_NAME = "motor_bot.db"
@@ -113,8 +118,8 @@ def save_payment(ad_id, user_id, receipt):
     conn.commit()
     conn.close()
 
-# ========== منوی اصلی ==========
-async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ========== منوها ==========
+async def user_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔍 جستجو", callback_data="search")],
         [InlineKeyboardButton("📝 ثبت آگهی", callback_data="new_ad")],
@@ -123,11 +128,6 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📊 قیمت‌روز", callback_data="prices")],
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")],
     ]
-    
-    # فقط برای ادمین
-    if update.effective_user.id == ADMIN_ID:
-        keyboard.append([InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_panel")])
-    
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = "🏍️ به ربات خرید و فروش موتورسیکلت خوش آمدید!\n\nیک گزینه را انتخاب کنید:"
     
@@ -135,6 +135,29 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
     else:
         await update.message.reply_text(text, reply_markup=reply_markup)
+
+async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📝 در انتظار پرداخت", callback_data="admin_pending")],
+        [InlineKeyboardButton("✅ آگهی‌های فعال", callback_data="admin_active")],
+        [InlineKeyboardButton("📊 آمار", callback_data="admin_stats")],
+        [InlineKeyboardButton("📋 همه آگهی‌ها", callback_data="admin_all_ads")],
+        [InlineKeyboardButton("🔙 منوی کاربری", callback_data="user_menu")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    text = "⚙️ **پنل مدیریت**\n\nسلام ادمین عزیز!"
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+
+async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id == ADMIN_ID:
+        await admin_menu(update, context)
+    else:
+        await user_menu(update, context)
 
 # ========== استارت ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -153,18 +176,12 @@ async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['ad_data'] = {}
     context.user_data['images'] = []
     
+    text = "📝 **ثبت آگهی جدید**\n\nلطفاً **برند و مدل** موتور را وارد کنید:"
+    
     if update.callback_query:
-        await update.callback_query.edit_message_text(
-            "📝 **ثبت آگهی جدید**\n\n"
-            "لطفاً **برند و مدل** موتور را وارد کنید:\n"
-            "مثال: هوندا CB400"
-        )
+        await update.callback_query.edit_message_text(text)
     else:
-        await update.message.reply_text(
-            "📝 **ثبت آگهی جدید**\n\n"
-            "لطفاً **برند و مدل** موتور را وارد کنید:\n"
-            "مثال: هوندا CB400"
-        )
+        await update.message.reply_text(text)
 
 async def handle_ad_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text
@@ -177,37 +194,37 @@ async def handle_ad_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if step == 'brand':
         ad_data['brand'] = user_input
         context.user_data['ad_step'] = 'year'
-        await update.message.reply_text("📅 سال تولید را وارد کنید (مثال: 1400):")
+        await update.message.reply_text("📅 سال تولید را وارد کنید:")
     
     elif step == 'year':
         ad_data['year'] = user_input
         context.user_data['ad_step'] = 'cc'
-        await update.message.reply_text("🔧 حجم موتور را وارد کنید (مثال: 400):")
+        await update.message.reply_text("🔧 حجم موتور را وارد کنید:")
     
     elif step == 'cc':
         ad_data['cc'] = user_input
         context.user_data['ad_step'] = 'gear'
-        await update.message.reply_text("⚙️ نوع گیربکس (دنده‌ای / اتوماتیک):")
+        await update.message.reply_text("⚙️ نوع گیربکس:")
     
     elif step == 'gear':
         ad_data['gear_type'] = user_input
         context.user_data['ad_step'] = 'mileage'
-        await update.message.reply_text("🔢 کارکرد (کیلومتر، مثال: 45000):")
+        await update.message.reply_text("🔢 کارکرد را وارد کنید:")
     
     elif step == 'mileage':
         ad_data['mileage'] = user_input
         context.user_data['ad_step'] = 'price'
-        await update.message.reply_text("💰 قیمت به تومان (مثال: 85000000):")
+        await update.message.reply_text("💰 قیمت را وارد کنید:")
     
     elif step == 'price':
         ad_data['price'] = user_input
         context.user_data['ad_step'] = 'province'
-        await update.message.reply_text("📍 استان را وارد کنید (مثال: تهران):")
+        await update.message.reply_text("📍 استان را وارد کنید:")
     
     elif step == 'province':
         ad_data['province'] = user_input
         context.user_data['ad_step'] = 'city'
-        await update.message.reply_text("🏙️ شهر را وارد کنید (مثال: تهران):")
+        await update.message.reply_text("🏙️ شهر را وارد کنید:")
     
     elif step == 'city':
         ad_data['city'] = user_input
@@ -217,16 +234,13 @@ async def handle_ad_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif step == 'phone':
         ad_data['contact_number'] = user_input
         context.user_data['ad_step'] = 'description'
-        await update.message.reply_text("📝 توضیحات تکمیلی (وضعیت موتور، بدنه، تعویض‌ها):")
+        await update.message.reply_text("📝 توضیحات تکمیلی:")
     
     elif step == 'description':
         ad_data['description'] = user_input
         context.user_data['ad_step'] = 'images'
         await update.message.reply_text(
-            "📸 **ارسال عکس‌ها**\n\n"
-            "حداقل ۱ عکس و حداکثر ۵ عکس ارسال کنید.\n\n"
-            "عکس‌ها رو یکی‌یکی بفرستید.\n"
-            "بعد از ارسال همه عکس‌ها، دکمه **پایان** رو بزنید.",
+            "📸 ارسال عکس‌ها\n\nحداقل ۱ عکس ارسال کنید.\nبعد از ارسال، دکمه پایان را بزنید.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ پایان ارسال عکس", callback_data="done_images")]
             ])
@@ -248,8 +262,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['images'].append(file_path)
     
     await update.message.reply_text(
-        f"✅ عکس {len(context.user_data['images'])} ثبت شد.\n"
-        "عکس بعدی رو بفرستید یا دکمه **پایان** رو بزنید.",
+        f"✅ عکس {len(context.user_data['images'])} ثبت شد.\nدکمه پایان را بزنید.",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ پایان ارسال عکس", callback_data="done_images")]
         ])
@@ -262,13 +275,12 @@ async def done_images(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     images = context.user_data.get('images', [])
     if len(images) < 1:
-        await query.edit_message_text("❌ حداقل ۱ عکس باید ارسال کنید!")
+        await query.edit_message_text("❌ حداقل ۱ عکس ارسال کنید!")
         return
     
     ad_data = context.user_data.get('ad_data', {})
     user_id = update.effective_user.id
     
-    # ذخیره در دیتابیس
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute('''INSERT INTO ads (user_id, brand, model, year, cc, gear_type, mileage, price, province, city, contact_number, description, images, created_at, status)
@@ -286,19 +298,14 @@ async def done_images(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['ad_data'] = {}
     context.user_data['images'] = []
     
-    # اگر ادمین باشه، مستقیم تایید بشه
     if user_id == ADMIN_ID:
         update_ad_status(ad_id, 'active')
-        await query.edit_message_text("✅ آگهی شما به عنوان ادمین ثبت و منتشر شد!")
+        await query.edit_message_text("✅ آگهی شما به عنوان ادمین ثبت شد!")
         return
     
-    # درخواست پرداخت
     keyboard = [[InlineKeyboardButton("💳 پرداخت ۵۰,۰۰۰ تومان", callback_data=f"pay_{ad_id}")]]
     await query.edit_message_text(
-        f"✅ **آگهی شما ثبت شد!**\n\n"
-        f"💰 مبلغ **۵۰,۰۰۰ تومان** برای انتشار آگهی باید پرداخت شود.\n\n"
-        f"💳 شماره کارت: `{CARD_NUMBER}`\n\n"
-        f"پس از واریز، دکمه زیر را بزنید و **رسید** را ارسال کنید.",
+        f"✅ آگهی ثبت شد!\n\n💰 مبلغ ۵۰,۰۰۰ تومان باید پرداخت شود.\n💳 شماره کارت: `{CARD_NUMBER}`\n\nپس از واریز، دکمه زیر را بزنید.",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -309,13 +316,9 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ad_id = int(query.data.split('_')[1])
     context.user_data['paying_ad'] = ad_id
     await query.edit_message_text(
-        f"💳 **ارسال رسید پرداخت**\n\n"
-        f"لطفاً رسید پرداخت را به صورت **عکس** ارسال کنید.\n\n"
-        f"مبلغ: **۵۰,۰۰۰ تومان**\n"
-        f"شماره کارت: `{CARD_NUMBER}`"
+        f"💳 رسید پرداخت را به صورت عکس ارسال کنید.\n\nمبلغ: ۵۰,۰۰۰ تومان\nشماره کارت: `{CARD_NUMBER}`"
     )
 
-# ========== دریافت رسید ==========
 async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ad_id = context.user_data.get('paying_ad')
     if not ad_id:
@@ -331,31 +334,28 @@ async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_payment(ad_id, update.effective_user.id, file_path)
     context.user_data['paying_ad'] = None
     
-    # ارسال به ادمین
     ad = get_ad_by_id(ad_id)
     keyboard = [
-        [InlineKeyboardButton("✅ تایید پرداخت", callback_data=f"confirm_payment_{ad_id}")],
-        [InlineKeyboardButton("❌ رد پرداخت", callback_data=f"reject_payment_{ad_id}")]
+        [InlineKeyboardButton("✅ تایید", callback_data=f"confirm_payment_{ad_id}")],
+        [InlineKeyboardButton("❌ رد", callback_data=f"reject_payment_{ad_id}")]
     ]
     await context.bot.send_photo(
         ADMIN_ID,
         photo=open(file_path, 'rb'),
-        caption=f"🧾 **رسید پرداخت**\n\nآگهی: {ad[2]}\nقیمت: {ad[8]} تومان\nکاربر: {update.effective_user.id}",
+        caption=f"🧾 رسید پرداخت\nآگهی: {ad[2]}\nکاربر: {update.effective_user.id}",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
     
-    await update.message.reply_text("✅ رسید شما ارسال شد. پس از تایید مدیر، آگهی منتشر می‌شود.")
+    await update.message.reply_text("✅ رسید ارسال شد. پس از تایید مدیر، آگهی منتشر می‌شود.")
 
-# ========== تایید/رد پرداخت ==========
 async def confirm_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     ad_id = int(query.data.split('_')[2])
     update_ad_status(ad_id, 'active')
-    await query.edit_message_caption("✅ پرداخت تایید شد. آگهی منتشر گردید.")
-    
+    await query.edit_message_caption("✅ پرداخت تایید شد.")
     ad = get_ad_by_id(ad_id)
-    await context.bot.send_message(ad[1], "✅ پرداخت شما تایید شد و آگهی شما منتشر گردید!")
+    await context.bot.send_message(ad[1], "✅ آگهی شما منتشر شد!")
 
 async def reject_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -363,9 +363,8 @@ async def reject_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ad_id = int(query.data.split('_')[2])
     update_ad_status(ad_id, 'rejected')
     await query.edit_message_caption("❌ پرداخت رد شد.")
-    
     ad = get_ad_by_id(ad_id)
-    await context.bot.send_message(ad[1], "❌ پرداخت شما رد شد. لطفاً با پشتیبانی تماس بگیرید.")
+    await context.bot.send_message(ad[1], "❌ پرداخت شما رد شد.")
 
 # ========== آگهی‌های من ==========
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -396,53 +395,26 @@ async def mark_sold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ad = get_ad_by_id(ad_id)
     
     if not ad or ad[1] != update.effective_user.id:
-        await query.answer("شما اجازه این کار را ندارید!")
+        await query.answer("شما اجازه ندارید!")
         return
     
     update_ad_status(ad_id, 'sold')
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("UPDATE ads SET sold_at=? WHERE id=?", (datetime.now().isoformat(), ad_id))
-    conn.commit()
-    conn.close()
+    await query.edit_message_text(f"✅ آگهی {ad[2]} فروخته شد.")
     
-    await query.edit_message_text(f"✅ آگهی {ad[2]} به عنوان فروخته شده ثبت شد.")
-    
-    # اطلاع به همه کاربران
     users = get_all_users()
     for user_id in users:
         try:
             await context.bot.send_message(
                 user_id,
-                f"🔔 **موتور فروخته شد!**\n\n"
-                f"🏍️ {ad[2]}\n💰 {ad[8]} تومان\n📍 {ad[10]}\n\n"
-                f"این آگهی به فروش رسید."
+                f"🔔 موتور فروخته شد!\n\n🏍️ {ad[2]}\n💰 {ad[8]} تومان\n📍 {ad[10]}"
             )
         except:
             pass
 
 # ========== پنل ادمین ==========
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.callback_query.answer("شما دسترسی ندارید!")
-        return
-    
-    pending_ads = get_all_ads('pending_payment')
-    active_ads = get_all_ads('active')
-    
-    keyboard = [
-        [InlineKeyboardButton(f"📝 در انتظار پرداخت ({len(pending_ads)})", callback_data="admin_pending")],
-        [InlineKeyboardButton(f"✅ آگهی‌های فعال ({len(active_ads)})", callback_data="admin_active")],
-        [InlineKeyboardButton("📊 آمار", callback_data="admin_stats")],
-        [InlineKeyboardButton("🔙 بازگشت", callback_data="menu")],
-    ]
-    await update.callback_query.edit_message_text(
-        "⚙️ **پنل مدیریت**",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
 async def admin_pending_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
+        await update.callback_query.answer("دسترسی ندارید!")
         return
     
     ads = get_all_ads('pending_payment')
@@ -450,14 +422,14 @@ async def admin_pending_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text("📭 هیچ آگهی در انتظار پرداخت نیست.")
         return
     
-    text = "📝 **آگهی‌های در انتظار پرداخت:**\n\n"
+    text = "📝 **در انتظار پرداخت:**\n\n"
     for ad in ads[:10]:
-        text += f"🆔 {ad[0]} | {ad[2]} | {ad[8]} تومان | {ad[10]}\n"
+        text += f"🆔 {ad[0]} | {ad[2]} | {ad[8]} تومان\n"
     
     keyboard = []
     for ad in ads[:5]:
         keyboard.append([InlineKeyboardButton(f"🆔 {ad[0]} - {ad[2]}", callback_data=f"view_ad_{ad[0]}")])
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_menu")])
     
     await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -472,7 +444,7 @@ async def admin_active_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = "✅ **آگهی‌های فعال:**\n\n"
     for ad in ads[:10]:
-        text += f"🆔 {ad[0]} | {ad[2]} | {ad[8]} تومان | {ad[10]}\n"
+        text += f"🆔 {ad[0]} | {ad[2]} | {ad[8]} تومان\n"
     
     keyboard = []
     for ad in ads[:5]:
@@ -480,8 +452,24 @@ async def admin_active_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(f"🔴 فروخته شد {ad[0]}", callback_data=f"sold_{ad[0]}"),
             InlineKeyboardButton(f"👁 {ad[0]}", callback_data=f"view_ad_{ad[0]}")
         ])
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_menu")])
     
+    await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def admin_all_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    
+    ads = get_all_ads()
+    if not ads:
+        await update.callback_query.edit_message_text("📭 هیچ آگهی وجود ندارد.")
+        return
+    
+    text = "📋 **همه آگهی‌ها:**\n\n"
+    for ad in ads[:10]:
+        text += f"🆔 {ad[0]} | {ad[2]} | {ad[8]} تومان | {ad[13]}\n"
+    
+    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin_menu")]]
     await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -498,14 +486,12 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_ads = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM ads WHERE status='sold'")
     sold_ads = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM ads WHERE status='pending_payment'")
+    pending_ads = c.fetchone()[0]
     conn.close()
     
     await update.callback_query.edit_message_text(
-        f"📊 **آمار کلی:**\n\n"
-        f"👤 کاربران: {users_count}\n"
-        f"📝 کل آگهی‌ها: {total_ads}\n"
-        f"✅ فعال: {active_ads}\n"
-        f"🔴 فروخته شده: {sold_ads}"
+        f"📊 **آمار:**\n\n👤 کاربران: {users_count}\n📝 کل: {total_ads}\n✅ فعال: {active_ads}\n⏳ در انتظار: {pending_ads}\n🔴 فروخته: {sold_ads}"
     )
 
 async def view_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -515,59 +501,23 @@ async def view_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text("❌ آگهی پیدا نشد.")
         return
     
-    text = f"🏍️ **{ad[2]}**\n"
-    text += f"📅 سال: {ad[4]}\n"
-    text += f"🔧 حجم: {ad[5]} سی‌سی\n"
-    text += f"⚙️ گیربکس: {ad[6]}\n"
-    text += f"🔢 کارکرد: {ad[7]} کیلومتر\n"
-    text += f"💰 قیمت: {ad[8]} تومان\n"
-    text += f"📍 استان: {ad[9]}\n"
-    text += f"🏙️ شهر: {ad[10]}\n"
-    text += f"📱 تماس: {ad[11]}\n"
-    text += f"📝 توضیحات: {ad[12]}\n"
+    text = f"🏍️ {ad[2]}\n📅 سال: {ad[4]}\n🔧 حجم: {ad[5]} سی‌سی\n⚙️ گیربکس: {ad[6]}\n🔢 کارکرد: {ad[7]} کیلومتر\n💰 قیمت: {ad[8]} تومان\n📍 استان: {ad[9]}\n🏙️ شهر: {ad[10]}\n📱 تماس: {ad[11]}\n📝 {ad[12]}"
     
-    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]]
+    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin_menu")]]
     await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ========== جستجو ==========
+# ========== سایر دکمه‌ها ==========
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.edit_message_text(
-        "🔍 **جستجو**\n\n"
-        "عبارت مورد نظر را ارسال کنید:\n\n"
-        "• `برند:هوندا`\n"
-        "• `قیمت:۵۰ تا ۱۰۰`\n"
-        "• `استان:تهران`\n"
-        "• `شهر:تهران`"
-    )
+    await update.callback_query.edit_message_text("🔍 **جستجو**\n\nعبارت مورد نظر را ارسال کنید.")
 
-# ========== قیمت‌روز ==========
 async def prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.edit_message_text(
-        "📊 **قیمت‌روز موتورهای پرطرفدار:**\n\n"
-        "هوندا CB400: ۸۵-۹۵ میلیون\n"
-        "یاماها MT-09: ۱۴۰-۱۶۰ میلیون\n"
-        "سوزوکی GSX-R: ۱۸۰-۲۰۰ میلیون\n"
-        "بنلی Leoncino: ۶۵-۷۵ میلیون"
-    )
+    await update.callback_query.edit_message_text("📊 **قیمت‌روز**\n\nهوندا CB400: ۸۵-۹۵ میلیون\nیاماها MT-09: ۱۴۰-۱۶۰ میلیون")
 
-# ========== پشتیبانی ==========
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.edit_message_text(
-        "📞 **پشتیبانی**\n\n"
-        "برای ارتباط با پشتیبانی، به آیدی زیر پیام دهید:\n"
-        f"@{update.effective_user.username or 'Admin'}"
-    )
+    await update.callback_query.edit_message_text(f"📞 پشتیبانی: @{SUPPORT_ID}")
 
-# ========== ویژه ==========
 async def vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.edit_message_text(
-        "⭐ **آگهی‌های ویژه**\n\n"
-        "• نمایش در بالای لیست\n"
-        "• تگ طلایی 🔥\n"
-        "• نوتیفیکیشن به همه\n\n"
-        f"💰 هزینه: ۵۰,۰۰۰ تومان\n"
-        f"💳 شماره کارت: `{CARD_NUMBER}`"
-    )
+    await update.callback_query.edit_message_text(f"⭐ ویژه\n💰 هزینه: ۵۰,۰۰۰ تومان\n💳 شماره کارت: `{CARD_NUMBER}`")
 
 # ========== هندلر دکمه‌ها ==========
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -575,8 +525,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
     
-    if data == "menu":
-        await main_menu(update, context)
+    if data == "user_menu":
+        await user_menu(update, context)
+    elif data == "admin_menu":
+        await admin_menu(update, context)
     elif data == "new_ad":
         await new_ad(update, context)
     elif data == "my_ads":
@@ -589,12 +541,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await support(update, context)
     elif data == "vip":
         await vip(update, context)
-    elif data == "admin_panel":
-        await admin_panel(update, context)
     elif data == "admin_pending":
         await admin_pending_ads(update, context)
     elif data == "admin_active":
         await admin_active_ads(update, context)
+    elif data == "admin_all_ads":
+        await admin_all_ads(update, context)
     elif data == "admin_stats":
         await admin_stats(update, context)
     elif data == "done_images":
