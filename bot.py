@@ -4,17 +4,22 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ========== تنظیمات ==========
+# ========== تنظیمات از متغیرهای محیطی ==========
 TOKEN = os.environ.get("TOKEN")
-ADMIN_ID = 8474856910  # آیدی شما
-CARD_NUMBER = os.environ.get("CARD_NUMBER", "6037-9981-2167-6789")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
+CARD_NUMBER = os.environ.get("CARD_NUMBER", "شماره کارت ثبت نشده")
+SUPPORT_USERNAME = os.environ.get("SUPPORT_USERNAME", "Admin")  # یوزرنیم بدون @
 
 if not TOKEN:
     print("❌ توکن نداریم!")
     exit(1)
 
+if ADMIN_ID == 0:
+    print("⚠️ هشدار: ADMIN_ID تنظیم نشده!")
+
 print(f"✅ ادمین: {ADMIN_ID}")
 print(f"✅ کارت: {CARD_NUMBER}")
+print(f"✅ پشتیبانی: @{SUPPORT_USERNAME}")
 
 # ========== دیتابیس ==========
 DB_NAME = "motor_bot.db"
@@ -83,7 +88,6 @@ def update_ad_status(ad_id, status):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # ذخیره کاربر
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("INSERT OR IGNORE INTO users (user_id, username, join_date) VALUES (?, ?, ?)",
@@ -91,7 +95,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
     
-    # تشخیص ادمین
     if user_id == ADMIN_ID:
         keyboard = [
             [InlineKeyboardButton("📝 در انتظار تایید", callback_data="pending")],
@@ -154,7 +157,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📸 **ارسال عکس‌ها**\n\n"
             "حداقل ۱ عکس و حداکثر ۵ عکس ارسال کنید.\n"
-            "عکس‌ها رو یکی‌یکی بفرستید.\n"
             "بعد از ارسال همه عکس‌ها، دکمه **پایان** رو بزنید.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ پایان ارسال عکس", callback_data="done")]])
         )
@@ -201,13 +203,11 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data.clear()
     
-    # اگر ادمین باشه، مستقیم تایید بشه
     if user_id == ADMIN_ID:
         update_ad_status(ad_id, 'active')
         await update.callback_query.message.reply_text("✅ آگهی شما به عنوان ادمین ثبت و منتشر شد!")
         return
     
-    # ارسال به ادمین برای تایید
     keyboard = [
         [InlineKeyboardButton("✅ تایید", callback_data=f"approve_{ad_id}")],
         [InlineKeyboardButton("❌ رد", callback_data=f"reject_{ad_id}")]
@@ -224,7 +224,7 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.callback_query.message.reply_text("✅ آگهی شما ثبت شد و در انتظار تایید مدیر است.")
 
-# ========== تایید/رد توسط ادمین ==========
+# ========== تایید/رد ==========
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ad_id = int(update.callback_query.data.split('_')[1])
     update_ad_status(ad_id, 'active')
@@ -295,7 +295,6 @@ async def pending_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for ad in ads:
         text += f"🆔 {ad[0]} | {ad[2]} | {ad[5]} تومان | {ad[6]}\n"
     
-    # دکمه برای تایید سریع
     keyboard = []
     for ad in ads[:5]:
         keyboard.append([
@@ -324,7 +323,6 @@ async def active_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for ad in ads:
         text += f"🆔 {ad[0]} | {ad[2]} | {ad[5]} تومان | {ad[6]}\n"
     
-    # دکمه فروخته شد
     keyboard = []
     for ad in ads[:5]:
         keyboard.append([
@@ -343,7 +341,6 @@ async def sold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_ad_status(ad_id, 'sold')
     await update.callback_query.edit_message_text(f"✅ آگهی {ad_id} به عنوان فروخته شده ثبت شد.")
     
-    # اطلاع به همه کاربران
     ad = get_ad_by_id(ad_id)
     if ad:
         users = get_all_users()
@@ -398,12 +395,17 @@ async def user_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ========== پشتیبانی ==========
+# ========== پشتیبانی با لینک درست ==========
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # از متغیر محیطی SUPPORT_USERNAME استفاده میکنیم
+    support_username = os.environ.get("SUPPORT_USERNAME", "Admin")
+    
     await update.callback_query.message.reply_text(
-        "📞 **پشتیبانی**\n\n"
-        "برای ارتباط با پشتیبانی، روی لینک زیر کلیک کنید:\n"
-        "[ارسال پیام به ادمین](tg://user?id=8474856910)"
+        f"📞 **پشتیبانی**\n\n"
+        f"برای ارتباط با پشتیبانی، روی لینک زیر کلیک کنید:\n"
+        f"[ارسال پیام به پشتیبانی](https://t.me/{support_username})\n\n"
+        f"یا با آیدی زیر تماس بگیرید:\n"
+        f"`@{support_username}`"
     )
 
 # ========== هندلر دکمه‌ها ==========
