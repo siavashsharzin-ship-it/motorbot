@@ -79,21 +79,6 @@ def update_ad_status(ad_id, status):
     conn.commit()
     conn.close()
 
-# ========== منوی دائمی پایین صفحه ==========
-def get_main_keyboard(user_id):
-    if user_id == ADMIN_ID:
-        keyboard = [
-            ["🏍️ لیست موتورها", "📝 ثبت آگهی"],
-            ["📝 در انتظار تایید", "✅ آگهی‌های فعال"],
-            ["📊 آمار"],
-        ]
-    else:
-        keyboard = [
-            ["🏍️ لیست موتورها", "📝 ثبت آگهی"],
-            ["📋 آگهی‌های من", "📞 پشتیبانی"],
-        ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
 # ========== بررسی عضویت (فقط برای کاربران عادی) ==========
 async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -109,6 +94,21 @@ async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return False
     except:
         return False
+
+# ========== منوی دائمی پایین صفحه ==========
+def get_main_keyboard(user_id):
+    if user_id == ADMIN_ID:
+        keyboard = [
+            ["🏍️ لیست موتورها", "📝 ثبت آگهی"],
+            ["📝 در انتظار تایید", "✅ آگهی‌های فعال"],
+            ["📊 آمار"],
+        ]
+    else:
+        keyboard = [
+            ["🏍️ لیست موتورها", "📝 ثبت آگهی"],
+            ["📋 آگهی‌های من", "📞 پشتیبانی"],
+        ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # ========== استارت ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -165,6 +165,19 @@ async def check_membership_callback(update: Update, context: ContextTypes.DEFAUL
 # ========== نمایش لیست موتورها ==========
 async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # کاربر عادی باید عضو باشه
+    if user_id != ADMIN_ID:
+        is_member = await check_membership(update, context)
+        if not is_member:
+            await update.message.reply_text(
+                f"❌ شما عضو کانال نیستید!\n\n📢 {CHANNEL_ID}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")]
+                ])
+            )
+            return
+    
     ads = get_active_ads()
     
     if not ads:
@@ -188,7 +201,7 @@ async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text("✅ **پایان لیست موتورها**", reply_markup=get_main_keyboard(user_id))
 
-# ========== ثبت آگهی (برای ادمین و کاربر) ==========
+# ========== ثبت آگهی ==========
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
@@ -296,13 +309,13 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data.clear()
     
-    # اگه ادمین باشه، مستقیم تایید میشه
+    # ====== اگر ادمین باشه، مستقیم تایید بشه ======
     if user_id == ADMIN_ID:
         update_ad_status(ad_id, 'active')
         await query.message.reply_text("✅ آگهی شما به عنوان ادمین ثبت و منتشر شد!", reply_markup=get_main_keyboard(user_id))
         return
     
-    # ارسال به ادمین برای تایید
+    # ====== کاربر عادی: ارسال به ادمین برای تایید ======
     keyboard = [
         [InlineKeyboardButton("✅ تایید", callback_data=f"approve_{ad_id}")],
         [InlineKeyboardButton("❌ رد", callback_data=f"reject_{ad_id}")]
@@ -362,6 +375,19 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========== آگهی‌های من ==========
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # کاربر عادی باید عضو باشه
+    if user_id != ADMIN_ID:
+        is_member = await check_membership(update, context)
+        if not is_member:
+            await update.message.reply_text(
+                f"❌ شما عضو کانال نیستید!\n\n📢 {CHANNEL_ID}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")]
+                ])
+            )
+            return
+    
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("SELECT * FROM ads WHERE user_id=? ORDER BY created_at DESC", (user_id,))
@@ -487,6 +513,19 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========== پشتیبانی ==========
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # کاربر عادی باید عضو باشه
+    if user_id != ADMIN_ID:
+        is_member = await check_membership(update, context)
+        if not is_member:
+            await update.message.reply_text(
+                f"❌ شما عضو کانال نیستید!\n\n📢 {CHANNEL_ID}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")]
+                ])
+            )
+            return
+    
     await update.message.reply_text(
         f"📞 **پشتیبانی**\n\nارسال پیام:\n[https://t.me/mkhbs22](https://t.me/mkhbs22)",
         reply_markup=get_main_keyboard(user_id)
