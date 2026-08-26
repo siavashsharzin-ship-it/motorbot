@@ -1,21 +1,20 @@
 import os
-import logging
 import sqlite3
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # ========== تنظیمات اولیه ==========
-TOKEN = os.environ.get("BOT_TOKEN")
+TOKEN = os.environ.get("TOKEN")  # ✅ تغییر: از TOKEN استفاده میکنه
 ADMIN_ID = os.environ.get("ADMIN_ID")
 CARD_NUMBER = os.environ.get("CARD_NUMBER", "شماره کارت ثبت نشده")
 
 if not TOKEN:
-    print("❌ خطا: توکن ربات در متغیر محیطی BOT_TOKEN تنظیم نشده!")
+    print("❌ خطا: توکن ربات در متغیر محیطی TOKEN تنظیم نشده!")
     exit(1)
 
 if not ADMIN_ID:
-    print("⚠️ هشدار: ADMIN_ID تنظیم نشده، برخی امکانات غیرفعال خواهد شد.")
+    print("⚠️ هشدار: ADMIN_ID تنظیم نشده")
 
 print("✅ ربات در حال راه‌اندازی...")
 
@@ -167,11 +166,10 @@ async def handle_ad_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ آگهی شما ثبت شد و در انتظار تایید مدیر است.")
         context.user_data['ad_step'] = None
         
-        # اطلاع به ادمین
         if ADMIN_ID:
             try:
                 keyboard = [[
-                    InlineKeyboardButton("✅ تایید", callback_data=f"approve_{ad_data.get('brand', '')}"),
+                    InlineKeyboardButton("✅ تایید", callback_data=f"approve"),
                     InlineKeyboardButton("❌ رد", callback_data="reject")
                 ]]
                 await context.bot.send_message(
@@ -265,8 +263,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await payment(update, context)
     elif data == "support":
         await support(update, context)
-    elif data == "menu":
-        await main_menu(update, context)
     else:
         await main_menu(update, context)
 
