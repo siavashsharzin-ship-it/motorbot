@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # ========== تنظیمات ==========
@@ -15,7 +15,6 @@ if not TOKEN:
     exit(1)
 
 print(f"✅ ادمین: {ADMIN_ID}")
-print(f"✅ کانال: {CHANNEL_ID}")
 
 # ========== دیتابیس ==========
 DB_NAME = "motor_bot.db"
@@ -64,12 +63,34 @@ def get_ad_by_id(ad_id):
     conn.close()
     return result
 
+def get_active_ads():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT * FROM ads WHERE status='active' ORDER BY created_at DESC")
+    ads = c.fetchall()
+    conn.close()
+    return ads
+
 def update_ad_status(ad_id, status):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("UPDATE ads SET status=? WHERE id=?", (status, ad_id))
     conn.commit()
     conn.close()
+
+# ========== منوی دائمی پایین صفحه (کیبورد) ==========
+def get_main_keyboard(user_id):
+    if user_id == ADMIN_ID:
+        keyboard = [
+            ["🏍️ لیست موتورها", "📝 در انتظار تایید"],
+            ["✅ آگهی‌های فعال", "📊 آمار"],
+        ]
+    else:
+        keyboard = [
+            ["🏍️ لیست موتورها", "📝 ثبت آگهی"],
+            ["📋 آگهی‌های من", "📞 پشتیبانی"],
+        ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # ========== بررسی عضویت ==========
 async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -83,26 +104,6 @@ async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return False
     except:
         return False
-
-# ========== منوی اصلی (همیشه پایین) ==========
-def get_main_menu(user_id):
-    if user_id == ADMIN_ID:
-        keyboard = [
-            [InlineKeyboardButton("📝 در انتظار تایید", callback_data="pending")],
-            [InlineKeyboardButton("✅ آگهی‌های فعال", callback_data="active_ads")],
-            [InlineKeyboardButton("📊 آمار", callback_data="stats")],
-            [InlineKeyboardButton("👤 منوی کاربری", callback_data="user_menu")],
-        ]
-        text = "⚙️ **پنل مدیریت - سلام ادمین!**"
-    else:
-        keyboard = [
-            [InlineKeyboardButton("📝 ثبت آگهی", callback_data="new_ad")],
-            [InlineKeyboardButton("📋 آگهی‌های من", callback_data="my_ads")],
-            [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")],
-        ]
-        text = "🏍️ **به ربات خرید و فروش موتورسیکلت خوش آمدید!**"
-    
-    return text, InlineKeyboardMarkup(keyboard)
 
 # ========== استارت ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,7 +130,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    text, reply_markup = get_main_menu(user_id)
+    reply_markup = get_main_keyboard(user_id)
+    if user_id == ADMIN_ID:
+        text = "⚙️ **پنل مدیریت - سلام ادمین!**\n\nلطفاً یک گزینه را انتخاب کنید:"
+    else:
+        text = "🏍️ **به ربات خرید و فروش موتورسیکلت خوش آمدید!**\n\nلطفاً یک گزینه را انتخاب کنید:"
+    
     await update.message.reply_text(text, reply_markup=reply_markup)
 
 # ========== بررسی مجدد عضویت ==========
@@ -150,11 +156,39 @@ async def check_membership_callback(update: Update, context: ContextTypes.DEFAUL
             ])
         )
 
+# ========== نمایش لیست موتورها ==========
+async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    ads = get_active_ads()
+    
+    if not ads:
+        await update.message.reply_text(
+            "📭 **هیچ موتوری برای فروش وجود ندارد.**\n\nاولین نفری باشید که آگهی ثبت می‌کند!",
+            reply_markup=get_main_keyboard(user_id)
+        )
+        return
+    
+    for ad in ads[:10]:
+        text = (
+            f"🏍️ **{ad[2]}**\n"
+            f"📅 سال: {ad[3]}\n"
+            f"🔧 حجم: {ad[4]} سی‌سی\n"
+            f"💰 قیمت: {ad[5]:,} تومان\n"
+            f"📍 شهر: {ad[6]}\n"
+            f"📱 تماس: {ad[7]}\n"
+            f"📝 {ad[8]}\n"
+        )
+        await update.message.reply_text(text, reply_markup=get_main_keyboard(user_id))
+    
+    await update.message.reply_text("✅ **پایان لیست موتورها**", reply_markup=get_main_keyboard(user_id))
+
 # ========== ثبت آگهی ==========
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
     is_member = await check_membership(update, context)
     if not is_member:
-        await update.callback_query.message.reply_text(
+        await update.message.reply_text(
             f"❌ شما عضو کانال نیستید!\n\n📢 {CHANNEL_ID}",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")]
@@ -166,14 +200,13 @@ async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['data'] = {}
     context.user_data['images'] = []
     
-    # منوی پایین برای برگشت
-    keyboard = [[InlineKeyboardButton("🔙 بازگشت به منو", callback_data="back_to_menu")]]
-    await update.callback_query.message.reply_text(
-        "📝 برند و مدل رو بنویس (مثال: هوندا CB400):",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "📝 **ثبت آگهی جدید**\n\nبرند و مدل رو بنویس (مثال: هوندا CB400):",
+        reply_markup=get_main_keyboard(user_id)
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     step = context.user_data.get('step')
     data = context.user_data.get('data', {})
     
@@ -183,32 +216,32 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if step == 'brand':
         data['brand'] = update.message.text
         context.user_data['step'] = 'year'
-        await update.message.reply_text("📅 سال تولید (مثال: 1400):")
+        await update.message.reply_text("📅 سال تولید (مثال: 1400):", reply_markup=get_main_keyboard(user_id))
     elif step == 'year':
         data['year'] = update.message.text
         context.user_data['step'] = 'cc'
-        await update.message.reply_text("🔧 حجم موتور (سی‌سی، مثال: 400):")
+        await update.message.reply_text("🔧 حجم موتور (سی‌سی، مثال: 400):", reply_markup=get_main_keyboard(user_id))
     elif step == 'cc':
         data['cc'] = update.message.text
         context.user_data['step'] = 'price'
-        await update.message.reply_text("💰 قیمت (تومان، مثال: 85000000):")
+        await update.message.reply_text("💰 قیمت (تومان، مثال: 85000000):", reply_markup=get_main_keyboard(user_id))
     elif step == 'price':
         data['price'] = update.message.text
         context.user_data['step'] = 'city'
-        await update.message.reply_text("📍 شهر (مثال: تهران):")
+        await update.message.reply_text("📍 شهر (مثال: تهران):", reply_markup=get_main_keyboard(user_id))
     elif step == 'city':
         data['city'] = update.message.text
         context.user_data['step'] = 'phone'
-        await update.message.reply_text("📱 شماره تماس (مثال: 09121234567):")
+        await update.message.reply_text("📱 شماره تماس (مثال: 09121234567):", reply_markup=get_main_keyboard(user_id))
     elif step == 'phone':
         data['phone'] = update.message.text
         context.user_data['step'] = 'desc'
-        await update.message.reply_text("📝 توضیحات تکمیلی:")
+        await update.message.reply_text("📝 توضیحات تکمیلی:", reply_markup=get_main_keyboard(user_id))
     elif step == 'desc':
         data['desc'] = update.message.text
         context.user_data['step'] = 'images'
         await update.message.reply_text(
-            "📸 عکس بفرست. بعدش دکمه پایان رو بزن.",
+            "📸 **ارسال عکس‌ها**\n\nحداقل ۱ عکس ارسال کنید.\nبعد از ارسال، دکمه **پایان** رو بزنید.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ پایان", callback_data="done")]])
         )
 
@@ -225,21 +258,22 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await file.download_to_drive(file_path)
     context.user_data['images'].append(file_path)
     await update.message.reply_text(
-        f"✅ عکس {len(context.user_data['images'])} ثبت شد.\n"
-        "عکس بعدی یا دکمه پایان:",
+        f"✅ عکس {len(context.user_data['images'])} ثبت شد.\nعکس بعدی یا دکمه پایان:",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ پایان", callback_data="done")]])
     )
 
 # ========== پایان عکس‌ها ==========
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
     data = context.user_data.get('data', {})
     images = context.user_data.get('images', [])
     
     if len(images) < 1:
-        await update.callback_query.message.reply_text("❌ حداقل ۱ عکس بفرست!")
+        await query.message.reply_text("❌ حداقل ۱ عکس باید ارسال کنید!", reply_markup=get_main_keyboard(user_id))
         return
-    
-    user_id = update.effective_user.id
     
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -256,26 +290,25 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if user_id == ADMIN_ID:
         update_ad_status(ad_id, 'active')
-        await update.callback_query.message.reply_text("✅ آگهی به عنوان ادمین ثبت شد!")
+        await query.message.reply_text("✅ آگهی به عنوان ادمین ثبت شد!", reply_markup=get_main_keyboard(user_id))
         return
     
-    # ارسال به ادمین
     keyboard = [
         [InlineKeyboardButton("✅ تایید", callback_data=f"approve_{ad_id}")],
         [InlineKeyboardButton("❌ رد", callback_data=f"reject_{ad_id}")]
     ]
     await context.bot.send_message(
         ADMIN_ID,
-        f"📝 **آگهی جدید!**\n\n🏍️ {data.get('brand')}\n💰 {data.get('price')} تومان\n📍 {data.get('city')}\n🆔 کاربر: {user_id}",
+        f"📝 **آگهی جدید!**\n\n🏍️ {data.get('brand')}\n💰 {data.get('price')} تومان\n📍 {data.get('city')}",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
     
-    await update.callback_query.message.reply_text(
-        "✅ آگهی ثبت شد. منتظر تایید مدیر باش.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 منو", callback_data="back_to_menu")]])
+    await query.message.reply_text(
+        "✅ آگهی شما ثبت شد و در انتظار تایید مدیر است.",
+        reply_markup=get_main_keyboard(user_id)
     )
 
-# ========== تایید آگهی و ارسال به همه ==========
+# ========== تایید آگهی ==========
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ad_id = int(update.callback_query.data.split('_')[1])
     update_ad_status(ad_id, 'active')
@@ -283,32 +316,22 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     ad = get_ad_by_id(ad_id)
     if ad:
-        # پیام به فروشنده
         await context.bot.send_message(ad[1], "✅ آگهی شما تایید و منتشر شد!")
         
-        # ارسال به همه کاربران
         users = get_all_users()
-        sent_count = 0
+        text = (
+            f"🆕 **آگهی جدید منتشر شد!**\n\n"
+            f"🏍️ **{ad[2]}**\n"
+            f"💰 قیمت: {ad[5]:,} تومان\n"
+            f"📍 شهر: {ad[6]}\n"
+            f"📱 تماس: {ad[7]}"
+        )
+        
         for user_id in users:
             try:
-                await context.bot.send_message(
-                    user_id,
-                    f"🆕 **آگهی جدید منتشر شد!**\n\n"
-                    f"🏍️ {ad[2]}\n"
-                    f"💰 {ad[5]} تومان\n"
-                    f"📍 {ad[6]}\n"
-                    f"📱 {ad[7]}\n\n"
-                    f"برای مشاهده جزییات به ربات مراجعه کنید."
-                )
-                sent_count += 1
+                await context.bot.send_message(user_id, text)
             except:
                 pass
-        
-        # گزارش به ادمین
-        await context.bot.send_message(
-            ADMIN_ID,
-            f"✅ آگهی تایید شد و به {sent_count} کاربر ارسال گردید."
-        )
 
 # ========== رد آگهی ==========
 async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -324,7 +347,7 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.edit_message_text("❌ رد شد!")
     
     if ad:
-        await context.bot.send_message(ad[1], "❌ آگهی شما رد شد. لطفاً با پشتیبانی تماس بگیرید.")
+        await context.bot.send_message(ad[1], "❌ آگهی شما رد شد.")
 
 # ========== آگهی‌های من ==========
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -336,10 +359,7 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     if not ads:
-        await update.callback_query.message.reply_text(
-            "📭 شما هیچ آگهی فعالی ندارید.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 منو", callback_data="back_to_menu")]])
-        )
+        await update.message.reply_text("📭 شما هیچ آگهی فعالی ندارید.", reply_markup=get_main_keyboard(user_id))
         return
     
     text = "📋 **آگهی‌های شما:**\n\n"
@@ -349,16 +369,14 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'active': '✅ فعال',
             'sold': '🔴 فروخته شده'
         }.get(ad[10], ad[10])
-        text += f"• {ad[2]} - {ad[5]} تومان ({status_text})\n"
+        text += f"• {ad[2]} - {ad[5]:,} تومان ({status_text})\n"
     
-    await update.callback_query.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 منو", callback_data="back_to_menu")]])
-    )
+    await update.message.reply_text(text, reply_markup=get_main_keyboard(user_id))
 
 # ========== پنل ادمین ==========
 async def pending_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
         return
     
     conn = sqlite3.connect(DB_NAME)
@@ -368,15 +386,12 @@ async def pending_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     if not ads:
-        await update.callback_query.message.reply_text(
-            "📭 هیچ آگهی در انتظار تایید نیست.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 منو", callback_data="back_to_menu")]])
-        )
+        await update.message.reply_text("📭 هیچ آگهی در انتظار تایید نیست.", reply_markup=get_main_keyboard(user_id))
         return
     
     text = "📝 **در انتظار تایید:**\n\n"
     for ad in ads:
-        text += f"🆔 {ad[0]} | {ad[2]} | {ad[5]} تومان | {ad[6]}\n"
+        text += f"🆔 {ad[0]} | {ad[2]} | {ad[5]:,} تومان\n"
     
     keyboard = []
     for ad in ads[:5]:
@@ -384,39 +399,31 @@ async def pending_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(f"✅ تایید {ad[0]}", callback_data=f"approve_{ad[0]}"),
             InlineKeyboardButton(f"❌ رد {ad[0]}", callback_data=f"reject_{ad[0]}")
         ])
-    keyboard.append([InlineKeyboardButton("🔙 منو", callback_data="back_to_menu")])
     
-    await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def active_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
         return
     
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT * FROM ads WHERE status='active' ORDER BY created_at DESC")
-    ads = c.fetchall()
-    conn.close()
+    ads = get_active_ads()
     
     if not ads:
-        await update.callback_query.message.reply_text(
-            "📭 هیچ آگهی فعالی نیست.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 منو", callback_data="back_to_menu")]])
-        )
+        await update.message.reply_text("📭 هیچ آگهی فعالی نیست.", reply_markup=get_main_keyboard(user_id))
         return
     
     text = "✅ **آگهی‌های فعال:**\n\n"
     for ad in ads:
-        text += f"🆔 {ad[0]} | {ad[2]} | {ad[5]} تومان | {ad[6]}\n"
+        text += f"🆔 {ad[0]} | {ad[2]} | {ad[5]:,} تومان\n"
     
     keyboard = []
     for ad in ads[:5]:
         keyboard.append([
             InlineKeyboardButton(f"🔴 فروخته شد {ad[0]}", callback_data=f"sold_{ad[0]}")
         ])
-    keyboard.append([InlineKeyboardButton("🔙 منو", callback_data="back_to_menu")])
     
-    await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def sold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -433,13 +440,14 @@ async def sold(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     user_id,
-                    f"🔔 **موتور فروخته شد!**\n\n🏍️ {ad[2]}\n💰 {ad[5]} تومان\n📍 {ad[6]}"
+                    f"🔔 **موتور فروخته شد!**\n\n🏍️ {ad[2]}\n💰 {ad[5]:,} تومان"
                 )
             except:
                 pass
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
         return
     
     conn = sqlite3.connect(DB_NAME)
@@ -456,39 +464,50 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sold_count = c.fetchone()[0]
     conn.close()
     
-    await update.callback_query.message.reply_text(
+    await update.message.reply_text(
         f"📊 **آمار کلی:**\n\n"
         f"👤 کاربران: {users}\n"
         f"📝 کل: {total}\n"
         f"✅ فعال: {active}\n"
         f"⏳ در انتظار: {pending}\n"
         f"🔴 فروخته: {sold_count}",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 منو", callback_data="back_to_menu")]])
+        reply_markup=get_main_keyboard(user_id)
     )
-
-# ========== منوی کاربری ==========
-async def user_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text, reply_markup = get_main_menu(user_id)
-    await update.callback_query.message.reply_text(text, reply_markup=reply_markup)
-
-# ========== برگشت به منو ==========
-async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text, reply_markup = get_main_menu(user_id)
-    await update.callback_query.message.reply_text(text, reply_markup=reply_markup)
 
 # ========== پشتیبانی ==========
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.message.reply_text(
-        f"📞 **پشتیبانی**\n\n"
-        f"ارسال پیام به پشتیبانی:\n"
-        f"[https://t.me/mkhbs22](https://t.me/mkhbs22)\n\n"
-        f"آیدی: `@mkhbs22`",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 منو", callback_data="back_to_menu")]])
+    user_id = update.effective_user.id
+    await update.message.reply_text(
+        f"📞 **پشتیبانی**\n\nارسال پیام:\n[https://t.me/mkhbs22](https://t.me/mkhbs22)",
+        reply_markup=get_main_keyboard(user_id)
     )
 
 # ========== هندلر ==========
+async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    if text == "🏍️ لیست موتورها":
+        await list_ads(update, context)
+    elif text == "📝 ثبت آگهی" or text == "📝 در انتظار تایید" and user_id == ADMIN_ID:
+        if user_id == ADMIN_ID:
+            await pending_ads(update, context)
+        else:
+            await new_ad(update, context)
+    elif text == "📋 آگهی‌های من":
+        await my_ads(update, context)
+    elif text == "📞 پشتیبانی":
+        await support(update, context)
+    elif text == "✅ آگهی‌های فعال":
+        await active_ads(update, context)
+    elif text == "📊 آمار":
+        await stats(update, context)
+    elif text == "📝 در انتظار تایید":
+        await pending_ads(update, context)
+    else:
+        await handle_text(update, context)
+
+# ========== هندلر دکمه‌های اینلاین ==========
 async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -496,22 +515,6 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if data == "check_membership":
         await check_membership_callback(update, context)
-    elif data == "back_to_menu":
-        await back_to_menu(update, context)
-    elif data == "new_ad":
-        await new_ad(update, context)
-    elif data == "my_ads":
-        await my_ads(update, context)
-    elif data == "support":
-        await support(update, context)
-    elif data == "pending":
-        await pending_ads(update, context)
-    elif data == "active_ads":
-        await active_ads(update, context)
-    elif data == "stats":
-        await stats(update, context)
-    elif data == "user_menu":
-        await user_menu(update, context)
     elif data == "done":
         await done(update, context)
     elif data.startswith("approve_"):
@@ -524,10 +527,12 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========== اجرا ==========
 def main():
     app = Application.builder().token(TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(CallbackQueryHandler(callback))
+    
     print("🚀 ربات روشن شد!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
