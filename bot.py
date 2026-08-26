@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # ========== تنظیمات ==========
@@ -15,6 +15,7 @@ if not TOKEN:
     exit(1)
 
 print(f"✅ ادمین: {ADMIN_ID}")
+print(f"✅ کانال: {CHANNEL_ID}")
 
 # ========== دیتابیس ==========
 DB_NAME = "motor_bot.db"
@@ -78,12 +79,13 @@ def update_ad_status(ad_id, status):
     conn.commit()
     conn.close()
 
-# ========== منوی دائمی پایین صفحه (کیبورد) ==========
+# ========== منوی دائمی پایین صفحه ==========
 def get_main_keyboard(user_id):
     if user_id == ADMIN_ID:
         keyboard = [
-            ["🏍️ لیست موتورها", "📝 در انتظار تایید"],
-            ["✅ آگهی‌های فعال", "📊 آمار"],
+            ["🏍️ لیست موتورها", "📝 ثبت آگهی"],
+            ["📝 در انتظار تایید", "✅ آگهی‌های فعال"],
+            ["📊 آمار"],
         ]
     else:
         keyboard = [
@@ -92,11 +94,14 @@ def get_main_keyboard(user_id):
         ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# ========== بررسی عضویت ==========
+# ========== بررسی عضویت (فقط برای کاربران عادی) ==========
 async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # ادمین معاف از شرط عضویت
     if user_id == ADMIN_ID:
         return True
+    
     try:
         member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
         if member.status in ["member", "administrator", "creator"]:
@@ -116,19 +121,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
     
-    is_member = await check_membership(update, context)
-    
-    if not is_member:
-        keyboard = [
-            [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")],
-            [InlineKeyboardButton("✅ بررسی عضویت", callback_data="check_membership")]
-        ]
-        await update.message.reply_text(
-            f"🔒 **برای استفاده از ربات، ابتدا عضو کانال زیر شوید:**\n\n"
-            f"📢 {CHANNEL_ID}",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
+    # فقط کاربران عادی چک عضویت میشن
+    if user_id != ADMIN_ID:
+        is_member = await check_membership(update, context)
+        if not is_member:
+            keyboard = [
+                [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")],
+                [InlineKeyboardButton("✅ بررسی عضویت", callback_data="check_membership")]
+            ]
+            await update.message.reply_text(
+                f"🔒 **برای استفاده از ربات، ابتدا عضو کانال زیر شوید:**\n\n"
+                f"📢 {CHANNEL_ID}",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return
     
     reply_markup = get_main_keyboard(user_id)
     if user_id == ADMIN_ID:
@@ -182,19 +188,21 @@ async def list_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text("✅ **پایان لیست موتورها**", reply_markup=get_main_keyboard(user_id))
 
-# ========== ثبت آگهی ==========
+# ========== ثبت آگهی (برای ادمین و کاربر) ==========
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    is_member = await check_membership(update, context)
-    if not is_member:
-        await update.message.reply_text(
-            f"❌ شما عضو کانال نیستید!\n\n📢 {CHANNEL_ID}",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")]
-            ])
-        )
-        return
+    # فقط کاربران عادی چک عضویت میشن (ادمین معاف)
+    if user_id != ADMIN_ID:
+        is_member = await check_membership(update, context)
+        if not is_member:
+            await update.message.reply_text(
+                f"❌ شما عضو کانال نیستید!\n\n📢 {CHANNEL_ID}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")]
+                ])
+            )
+            return
     
     context.user_data['step'] = 'brand'
     context.user_data['data'] = {}
@@ -288,11 +296,13 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data.clear()
     
+    # اگه ادمین باشه، مستقیم تایید میشه
     if user_id == ADMIN_ID:
         update_ad_status(ad_id, 'active')
-        await query.message.reply_text("✅ آگهی به عنوان ادمین ثبت شد!", reply_markup=get_main_keyboard(user_id))
+        await query.message.reply_text("✅ آگهی شما به عنوان ادمین ثبت و منتشر شد!", reply_markup=get_main_keyboard(user_id))
         return
     
+    # ارسال به ادمین برای تایید
     keyboard = [
         [InlineKeyboardButton("✅ تایید", callback_data=f"approve_{ad_id}")],
         [InlineKeyboardButton("❌ رد", callback_data=f"reject_{ad_id}")]
@@ -347,7 +357,7 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.edit_message_text("❌ رد شد!")
     
     if ad:
-        await context.bot.send_message(ad[1], "❌ آگهی شما رد شد.")
+        await context.bot.send_message(ad[1], "❌ آگهی شما رد شد. لطفاً با پشتیبانی تماس بگیرید.")
 
 # ========== آگهی‌های من ==========
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -489,21 +499,18 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if text == "🏍️ لیست موتورها":
         await list_ads(update, context)
-    elif text == "📝 ثبت آگهی" or text == "📝 در انتظار تایید" and user_id == ADMIN_ID:
-        if user_id == ADMIN_ID:
-            await pending_ads(update, context)
-        else:
-            await new_ad(update, context)
+    elif text == "📝 ثبت آگهی":
+        await new_ad(update, context)
     elif text == "📋 آگهی‌های من":
         await my_ads(update, context)
     elif text == "📞 پشتیبانی":
         await support(update, context)
-    elif text == "✅ آگهی‌های فعال":
-        await active_ads(update, context)
-    elif text == "📊 آمار":
-        await stats(update, context)
-    elif text == "📝 در انتظار تایید":
+    elif text == "📝 در انتظار تایید" and user_id == ADMIN_ID:
         await pending_ads(update, context)
+    elif text == "✅ آگهی‌های فعال" and user_id == ADMIN_ID:
+        await active_ads(update, context)
+    elif text == "📊 آمار" and user_id == ADMIN_ID:
+        await stats(update, context)
     else:
         await handle_text(update, context)
 
