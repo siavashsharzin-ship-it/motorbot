@@ -1,127 +1,160 @@
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext
-import sqlite3
+# -*- coding: utf-8 -*-
+import os
+import logging
+from datetime import datetime
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-BOT_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"   # <--- توکن خودت رو اینجا بنویس
+# ================== تنظیمات ==================
+TOKEN = os.getenv("BOT_TOKEN")  # توکن از محیط (برای Railway)
 
-updater = Updater(BOT_TOKEN, use_context=True)
-dp = updater.dispatcher
+if not TOKEN:
+    print("❌ خطا: متغیر محیطی BOT_TOKEN تنظیم نشده!")
+    print("📌 برای تست روی گوشی: TOKEN رو مستقیم وارد کن")
+    # برای تست روی گوشی، این خط رو فعال کن:
+    # TOKEN = "توکن_واقعی_اینجا"
+    exit()
 
-# دیتابیس ملک
-conn = sqlite3.connect("real_estate.db")
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS ads 
-             (id INTEGER PRIMARY KEY, type TEXT, location TEXT, price REAL, size REAL, year TEXT, description TEXT)''')
-conn.commit()
+# ================== دیتابیس ساده (موقت) ==================
+properties_db = []
+property_counter = 1
 
-# دیتابیس موتور (حفظ شده)
-conn2 = sqlite3.connect("motor_ads.db")
-c2 = conn2.cursor()
-c2.execute('''CREATE TABLE IF NOT EXISTS ads2 
-             (id INTEGER PRIMARY KEY, type TEXT, brand TEXT, price REAL, year INTEGER, description TEXT)''')
-conn2.commit()
+def save_property(address, area, price):
+    global property_counter
+    prop = {
+        'id': property_counter,
+        'address': address,
+        'area': area,
+        'price': price,
+        'created_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
+        'is_sold': False
+    }
+    properties_db.append(prop)
+    property_counter += 1
+    return prop
 
-# ==================== ربات ملک ====================
-def start_realty(update, context):
+def get_all_properties():
+    return [p for p in properties_db if not p['is_sold']]
+
+def search_properties(max_price):
+    return [p for p in properties_db if not p['is_sold'] and p['price'] <= max_price]
+
+# ================== دستورات ربات ==================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("🏠 آگهی جدید ملک", callback_data="new_realty")],
-        [InlineKeyboardButton("🔍 جستجو", callback_data="search")],
-        [InlineKeyboardButton("📋 لیست آگهی‌های ملک", callback_data="list_realty")]
+        [InlineKeyboardButton("➕ ثبت ملک جدید", callback_data='add')],
+        [InlineKeyboardButton("📋 لیست املاک", callback_data='list')],
+        [InlineKeyboardButton("🔍 جستجو", callback_data='search')],
+        [InlineKeyboardButton("📊 آمار", callback_data='stats')],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("سلام! ربات آگهی‌های ملک آماده‌ست.", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "🏠 **به ربات خرید و فروش بنگاه خوش آمدی!**\n\n"
+        "از دکمه‌های زیر استفاده کن:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
 
-def button_realty(update, context):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
-    if query.data == "new_realty":
-        query.edit_message_text("لطفا نوع ملک را بفرستید")
-        context.user_data['waiting'] = 'type'
-    elif query.data == "search":
-        query.edit_message_text("لطفا آدرس یا شهر را بفرستید")
-        context.user_data['waiting'] = 'search'
+    await query.answer()
+    
+    if query.data == 'add':
+        await query.edit_message_text(
+            "📝 **ثبت ملک جدید**\n\n"
+            "فرمت: `/add آدرس متراژ قیمت`\n"
+            "مثال: `/add خیابان آزادی 80 500000000`"
+        )
+    elif query.data == 'list':
+        props = get_all_properties()
+        if not props:
+            await query.edit_message_text("📭 هنوز ملکی ثبت نشده!")
+            return
+        msg = "📋 **لیست املاک:**\n\n"
+        for p in props[:5]:
+            msg += f"🏠 {p['address']}\n"
+            msg += f"📐 {p['area']} متر | 💰 {p['price']:,} تومان\n"
+            msg += f"🆔 کد: {p['id']}\n➖➖➖➖➖\n"
+        if len(props) > 5:
+            msg += f"\nو {len(props)-5} ملک دیگر..."
+        await query.edit_message_text(msg, parse_mode='Markdown')
+    elif query.data == 'search':
+        await query.edit_message_text(
+            "🔍 **جستجو**\n\n"
+            "از دستور زیر استفاده کن:\n"
+            "`/search حداکثر_قیمت`\n"
+            "مثال: `/search 300000000`"
+        )
+    elif query.data == 'stats':
+        total = len(properties_db)
+        sold = sum(1 for p in properties_db if p['is_sold'])
+        await query.edit_message_text(
+            f"📊 **آمار بنگاه**\n\n"
+            f"🏠 کل املاک: {total}\n"
+            f"✅ موجود: {total - sold}\n"
+            f"❌ فروش رفته: {sold}"
+        )
 
-def handle_realty(update, context):
-    if 'waiting' in context.user_data:
-        if context.user_data['waiting'] == 'type':
-            context.user_data['type'] = update.message.text
-            update.message.reply_text("لطفا موقعیت را بفرستید")
-            context.user_data['waiting'] = 'location'
-        elif context.user_data['waiting'] == 'location':
-            context.user_data['location'] = update.message.text
-            update.message.reply_text("قیمت را بفرستید")
-            context.user_data['waiting'] = 'price'
-        elif context.user_data['waiting'] == 'price':
-            context.user_data['price'] = float(update.message.text)
-            update.message.reply_text("اندازه را بفرستید")
-            context.user_data['waiting'] = 'size'
-        elif context.user_data['waiting'] == 'size':
-            context.user_data['size'] = float(update.message.text)
-            update.message.reply_text("سال ساخت را بفرستید")
-            context.user_data['waiting'] = 'year'
-        elif context.user_data['waiting'] == 'year':
-            context.user_data['year'] = update.message.text
-            update.message.reply_text("توضیحات را بفرستید")
-            context.user_data['waiting'] = 'description'
+async def add_property(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if len(args) < 3:
+        await update.message.reply_text(
+            "❌ فرمت: `/add آدرس متراژ قیمت`\n"
+            "مثال: `/add خیابان آزادی 80 500000000`"
+        )
+        return
+    
+    address = " ".join(args[:-2])
+    try:
+        area = int(args[-2])
+        price = int(args[-1])
+    except ValueError:
+        await update.message.reply_text("❌ متراژ و قیمت باید عدد باشن!")
+        return
+    
+    prop = save_property(address, area, price)
+    await update.message.reply_text(
+        f"✅ **ملک ثبت شد!**\n\n"
+        f"📍 آدرس: {address}\n"
+        f"📐 متراژ: {area} متر\n"
+        f"💰 قیمت: {price:,} تومان\n"
+        f"🆔 کد: {prop['id']}"
+    )
 
-    if 'type' in context.user_data and 'location' in context.user_data and 'price' in context.user_data and 'size' in context.user_data and 'year' in context.user_data and 'description' in context.user_data:
-        c.execute("INSERT INTO ads (type, location, price, size, year, description) VALUES (?, ?, ?, ?, ?, ?)",
-                  (context.user_data['type'], context.user_data['location'], context.user_data['price'], context.user_data['size'], context.user_data['year'], context.user_data['description']))
-        conn.commit()
-        del context.user_data['type']
-        del context.user_data['location']
-        del context.user_data['price']
-        del context.user_data['size']
-        del context.user_data['year']
-        del context.user_data['description']
-        update.message.reply_text("✅ آگهی ملک ثبت شد!")
+async def search_property(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ لطفاً قیمت حداکثر رو وارد کن: `/search 500000000`")
+        return
+    
+    try:
+        max_price = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ قیمت باید عدد باشه!")
+        return
+    
+    results = search_properties(max_price)
+    if not results:
+        await update.message.reply_text(f"🔍 هیچ ملکی تا {max_price:,} تومان پیدا نشد!")
+        return
+    
+    msg = f"🔍 **نتایج جستجو (تا {max_price:,} تومان):**\n\n"
+    for p in results[:5]:
+        msg += f"🏠 {p['address']}\n"
+        msg += f"💰 {p['price']:,} تومان | 📐 {p['area']} متر\n"
+        msg += f"🆔 کد: {p['id']}\n➖➖➖\n"
+    await update.message.reply_text(msg, parse_mode='Markdown')
 
-# ==================== ربات موتورسیکلت (حفظ شده) ====================
-def start_motor(update, context):
-    keyboard = [[InlineKeyboardButton("🚗 آگهی جدید موتورسیکلت", callback_data="new_motor")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("سلام! ربات آگهی موتورسیکلت آماده‌ست.", reply_markup=reply_markup)
+# ================== اجرا ==================
+def main():
+    print("🤖 در حال روشن کردن ربات...")
+    app = Application.builder().token(TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add_property))
+    app.add_handler(CommandHandler("search", search_property))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    
+    print("✅ ربات روشن شد! منتظر پیام‌ها هستم...")
+    app.run_polling()
 
-def button_motor(update, context):
-    query = update.callback_query
-    query.answer()
-    if query.data == "new_motor":
-        query.edit_message_text("لطفا مدل موتورسیکلت را بفرستید")
-        context.user_data['waiting'] = 'brand'
-
-def handle_motor(update, context):
-    if 'waiting' in context.user_data:
-        if context.user_data['waiting'] == 'brand':
-            context.user_data['brand'] = update.message.text
-            update.message.reply_text("قیمت را بفرستید")
-            context.user_data['waiting'] = 'price'
-        elif context.user_data['waiting'] == 'price':
-            context.user_data['price'] = float(update.message.text)
-            update.message.reply_text("سال را بفرستید")
-            context.user_data['waiting'] = 'year'
-        elif context.user_data['waiting'] == 'year':
-            context.user_data['year'] = int(update.message.text)
-            update.message.reply_text("توضیحات را بفرستید")
-            context.user_data['waiting'] = 'description'
-
-    if 'brand' in context.user_data and 'price' in context.user_data and 'year' in context.user_data and 'description' in context.user_data:
-        c2.execute("INSERT INTO ads2 (type, brand, price, year, description) VALUES (?, ?, ?, ?, ?)",
-                   ("موتورسیکلت", context.user_data['brand'], context.user_data['price'], context.user_data['year'], context.user_data['description']))
-        conn2.commit()
-        del context.user_data['brand']
-        del context.user_data['price']
-        del context.user_data['year']
-        del context.user_data['description']
-        update.message.reply_text("✅ آگهی موتورسیکلت ثبت شد!")
-
-# هندلرها
-dp.add_handler(CommandHandler("start", start_realty))
-dp.add_handler(CallbackQueryHandler(button_realty))
-dp.add_handler(MessageHandler(Filters.text, handle_realty))
-
-dp.add_handler(CommandHandler("start", start_motor))
-dp.add_handler(CallbackQueryHandler(button_motor))
-dp.add_handler(MessageHandler(Filters.text, handle_motor))
-
-print("🤖 ربات آگهی‌های ملک و موتورسیکلت (دو ربات با یک توکن) شروع شد!")
-updater.start_polling()
-updater.idle()
+if __name__ == "__main__":
+    main()
