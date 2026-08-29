@@ -6,16 +6,16 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # ================== تنظیمات ==================
-TOKEN = os.getenv("BOT_TOKEN")  # توکن از محیط (برای Railway)
+TOKEN = os.getenv("TOKEN")  # ✅ حالا با TOKEN کار میکنه (همون اسم قبلی)
 
 if not TOKEN:
-    print("❌ خطا: متغیر محیطی BOT_TOKEN تنظیم نشده!")
-    print("📌 برای تست روی گوشی: TOKEN رو مستقیم وارد کن")
+    print("❌ خطا: متغیر محیطی TOKEN تنظیم نشده!")
+    print("📌 برای تست روی گوشی، توکن رو مستقیم وارد کن")
     # برای تست روی گوشی، این خط رو فعال کن:
     # TOKEN = "توکن_واقعی_اینجا"
     exit()
 
-# ================== دیتابیس ساده (موقت) ==================
+# ================== دیتابیس ساده ==================
 properties_db = []
 property_counter = 1
 
